@@ -137,7 +137,7 @@ describe('D3: one-time fields drop out of the Year 2 base and generate no amc', 
         { field_key: 'once', label: 'One-time setup', unit_price_inr: 500000, frequency: 'one_time', active: true, sort_order: 20 },
       ],
       modules: [
-        { module_key: 'TEST', label: 'Test', kind: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
+        { module_key: 'TEST', label: 'Test', kind: 'composite', pricing_type: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
       ],
       module_fields: [
         { module_key: 'TEST', field_key: 'rec' },

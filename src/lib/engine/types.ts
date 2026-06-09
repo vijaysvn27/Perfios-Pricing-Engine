@@ -5,6 +5,15 @@
 export type Frequency = 'recurring' | 'one_time'
 export type ModuleKind = 'composite' | 'saas'
 export type CmModel = 'perpetual' | 'subscription'
+/**
+ * How a module is priced. Additive metadata introduced in Stage 2 — the ENGINE
+ * IGNORES it (Stage 1 math unchanged); validation and the admin UI use it.
+ * - composite  : contributes fields to the unified composite base
+ * - multiplier : ROPA-style, base x multiplier, one-time
+ * - tier       : Consent-Manager-style, tier license (no fields) — exempt from
+ *                the "module must have >= 1 field" validation rule
+ */
+export type PricingType = 'composite' | 'multiplier' | 'tier'
 
 /** A priced line item (rate-card row). unit_price_inr is whole integer rupees. */
 export interface FieldDef {
@@ -28,6 +37,8 @@ export interface ModuleDef {
   module_key: string
   label: string
   kind: ModuleKind
+  /** Additive (Stage 2); ignored by the engine. Drives validation + admin UI. */
+  pricing_type: PricingType
   deployment_pct: number | null
   amc_pct: number | null
   multiplier: number | null

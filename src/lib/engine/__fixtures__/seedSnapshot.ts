@@ -17,11 +17,11 @@ export const seedSnapshot: ConfigSnapshot = {
     { field_key: 'dam_dataset', label: 'DAM structured dataset', unit_price_inr: 150000, frequency: 'recurring', active: true, sort_order: 90 },
   ],
   modules: [
-    { module_key: 'DSPM', label: 'DSPM', kind: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
-    { module_key: 'DATA_FLOW', label: 'Data Flow (incl. ROPA)', kind: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
-    { module_key: 'DAM', label: 'DAM', kind: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
-    { module_key: 'ROPA_STANDALONE', label: 'ROPA only (SaaS gap analysis)', kind: 'saas', deployment_pct: null, amc_pct: null, multiplier: 0.7, applies_multiplier: true, active: true },
-    { module_key: 'CM', label: 'Consent Manager', kind: 'saas', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
+    { module_key: 'DSPM', label: 'DSPM', kind: 'composite', pricing_type: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
+    { module_key: 'DATA_FLOW', label: 'Data Flow (incl. ROPA)', kind: 'composite', pricing_type: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
+    { module_key: 'DAM', label: 'DAM', kind: 'composite', pricing_type: 'composite', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
+    { module_key: 'ROPA_STANDALONE', label: 'ROPA only (SaaS gap analysis)', kind: 'saas', pricing_type: 'multiplier', deployment_pct: null, amc_pct: null, multiplier: 0.7, applies_multiplier: true, active: true },
+    { module_key: 'CM', label: 'Consent Manager', kind: 'saas', pricing_type: 'tier', deployment_pct: null, amc_pct: null, multiplier: null, applies_multiplier: false, active: true },
   ],
   module_fields: [
     // SHARED PLATFORM tagged to every composite module + ROPA -> union counts it once.
