@@ -44,13 +44,16 @@ nothing can drift.
 Add an explicit pricing classifier so behavior generalizes beyond the `CM` key.
 
 - `modules.pricing_type` — new enum `pricing_type` = `composite | multiplier | tier`.
-  Backfill: DSPM/DATA_FLOW/DAM = `composite`, ROPA_STANDALONE = `multiplier`,
-  CM = `tier`. `not null`.
+  Backfill the `modules` table: DSPM/DATA_FLOW/DAM = `composite`,
+  ROPA_STANDALONE = `multiplier`, CM = `tier`. `not null`.
 - `ConfigSnapshot.ModuleDef` gains `pricing_type` (additive; **the engine ignores
   it** — math unchanged). Validation and the admin UI use it.
-- The `0001` snapshot already published as v1 predates this column; the seed/v1
-  snapshot is re-published (or backfilled) so the live snapshot carries
-  `pricing_type`. The calculator does not depend on it, so this is safe.
+- `modules.deployment_pct` and `modules.amc_pct` remain in the schema as
+  **nullable / reserved** but are **never edited in the UI** — see Modules tab.
+- The existing **v1 snapshot is left immutable**. Migration `0003`, after adding
+  and backfilling `pricing_type`, **publishes a NEW version (v2)** built from the
+  updated tables (carrying `pricing_type`) and sets v2 live. v1 stays untouched as
+  history. The calculator does not depend on `pricing_type`, so this is safe.
 
 ## RPCs (migration `0003`, `security definer`, granted to anon for now)
 Versioning stays atomic and server-side; the engine is not involved.
@@ -95,9 +98,13 @@ Each error: `{ code, message, entityType, entityKey }`.
   a sticky right panel (**Preview + Validation + Publish**).
 - **Fields**: add / edit / deactivate — key, label, unit price (int), frequency
   (dropdown), sort order.
-- **Modules**: edit label, `pricing_type`, deployment_pct, amc_pct, multiplier;
-  tag/untag fields via checkboxes (this is how "what DSPM includes" changes). The
-  visible rate inputs adapt to `pricing_type` (tier modules show no field tags;
+- **Modules**: edit label and `pricing_type`; tag/untag fields via checkboxes
+  (this is how "what DSPM includes" changes). For `multiplier`-type modules, edit
+  the multiplier. **Per-module `deployment_pct`/`amc_pct` are NOT shown** — the
+  engine applies a single global deployment%/amc% from Settings to the combined
+  composite base (Stage 1 D1) and ignores per-module overrides, so editing them
+  would silently have no effect. Deployment/amc % are edited only in Settings. The
+  visible inputs adapt to `pricing_type` (tier modules show no field tags;
   multiplier modules show the multiplier).
 - **CM Tiers**: license fee, amc %, implementation fee.
 - **Settings**: `y2_includes_deployment` toggle, `cm_model` dropdown,
@@ -130,7 +137,9 @@ failure seen in Codespaces) so the admin + calculator can be previewed in the cl
 
 ## Testing / verification
 CI (cloud) verifies what is automatable:
-- `buildSnapshot` unit tests (draft → snapshot; matches the seed snapshot).
+- `buildSnapshot` unit tests (draft → snapshot). Parity is like-for-like: the seed
+  snapshot fixture it asserts against is updated to include `pricing_type` on every
+  module, since `buildSnapshot` now emits it.
 - `validateDraft` unit tests: zero-field composite fails; `tier` module with zero
   fields passes (exemption); negative pct fails; missing cm license fails; dangling
   tag fails; valid draft passes.
