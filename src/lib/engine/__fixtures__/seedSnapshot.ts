@@ -52,5 +52,5 @@ export const seedSnapshot: ConfigSnapshot = {
 
 /** Quantity helper: 1 of every field in the rate card. */
 export const allOnes: Record<string, number> = Object.fromEntries(
-  seedSnapshot.fields.map((f) => [f.field_key, 1]),
+  seedSnapshot.fields.map((f): [string, number] => [f.field_key, 1]),
 )
