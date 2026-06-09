@@ -13,6 +13,7 @@ export type {
   ModuleDef,
   ModuleFieldTag,
   ModuleKind,
+  PricingType,
   Selections,
   Settings,
 } from './types'
