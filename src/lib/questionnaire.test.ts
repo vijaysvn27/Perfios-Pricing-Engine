@@ -11,9 +11,9 @@ const form: PublicForm = {
     { module_key: 'CM', label: 'Consent Manager', kind: 'saas', pricing_type: 'tier', applies_multiplier: false, active: true },
   ],
   fields: [
-    { field_key: 'db', label: 'Databases', sort_order: 10, active: true },
-    { field_key: 'gdrive_user', label: 'GDrive users', sort_order: 60, active: true },
-    { field_key: 'vm', label: 'Virtual machines', sort_order: 70, active: true },
+    { field_key: 'db', label: 'Databases', sort_order: 10, active: true, section: 'Data sources', section_sort: 1, item_sort: 1 },
+    { field_key: 'gdrive_user', label: 'GDrive users', sort_order: 60, active: true, section: 'Data sources', section_sort: 1, item_sort: 2 },
+    { field_key: 'vm', label: 'Virtual machines', sort_order: 70, active: true, section: 'Infrastructure', section_sort: 2, item_sort: 1 },
   ],
   module_fields: [
     { module_key: 'DSPM', field_key: 'db' },
@@ -25,18 +25,34 @@ const form: PublicForm = {
     { tier_key: 'mid', label: 'Mid' },
     { tier_key: 'large', label: 'Large' },
   ],
+  informational_questions: [
+    { question_key: 'employees', question_text: 'How many employees?', example: '500', why_text: 'Sizing', answer_type: 'number', options: null, section: 'About you', section_sort: 0, item_sort: 1, active: true },
+    { question_key: 'has_dpo', question_text: 'Do you have a DPO?', example: null, why_text: null, answer_type: 'yes_no', options: null, section: 'About you', section_sort: 0, item_sort: 2, active: true },
+    { question_key: 'inactive_q', question_text: 'Hidden', example: null, why_text: null, answer_type: 'text', options: null, section: 'About you', section_sort: 0, item_sort: 3, active: false },
+  ],
   excel_hero: null,
   excel_terms: null,
 }
 
+const ANSWER_COL = 4
+
 function setAnswer(ws: ExcelJS.Worksheet, code: string, val: number | string) {
   ws.eachRow((row) => {
-    if (String(row.getCell(1).value) === code) row.getCell(3).value = val
+    if (String(row.getCell(1).value) === code) row.getCell(ANSWER_COL).value = val
   })
 }
 
+function codes(ws: ExcelJS.Worksheet): string[] {
+  const out: string[] = []
+  ws.eachRow((r) => {
+    const c = String(r.getCell(1).value ?? '')
+    if (c && c !== 'Field Code') out.push(c)
+  })
+  return out
+}
+
 describe('questionnaire round-trip', () => {
-  it('restores module selection, quantities, CM tier, and customer name', async () => {
+  it('restores module selection, priced quantities, CM tier, and customer name', async () => {
     const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], { customerName: 'Acme Bank' })
     const ws = wb.getWorksheet('Questionnaire')!
     setAnswer(ws, 'db', 3)
@@ -52,15 +68,51 @@ describe('questionnaire round-trip', () => {
     expect(parsed.customerName).toBe('Acme Bank')
   })
 
-  it('VM appears only when Data Flow/ROPA is selected (gating via tags)', async () => {
-    // DSPM only -> no vm row -> filling vm is impossible; parse yields no vm.
-    const wbDspm = buildQuestionnaireWorkbook(form, ['DSPM'], {})
-    const wsD = wbDspm.getWorksheet('Questionnaire')!
-    const codes: string[] = []
-    wsD.eachRow((r) => { const c = String(r.getCell(1).value ?? ''); if (c && c !== 'Field Code') codes.push(c) })
-    expect(codes).not.toContain('vm')
+  it('captures informational answers separately and NEVER in quantities', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM'], {})
+    const ws = wb.getWorksheet('Questionnaire')!
+    setAnswer(ws, 'db', 5)
+    setAnswer(ws, 'info:employees', 500)
+    setAnswer(ws, 'info:has_dpo', 'Yes')
 
-    // Data Flow -> vm row present
+    const buf = await wb.xlsx.writeBuffer()
+    const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
+
+    expect(parsed.quantities).toEqual({ db: 5 })
+    expect(parsed.quantities.employees).toBeUndefined()
+    expect(parsed.quantities.has_dpo).toBeUndefined()
+    expect(parsed.informationalAnswers).toEqual({ employees: 500, has_dpo: true })
+  })
+
+  it('omits inactive informational questions from the sheet', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM'], {})
+    const ws = wb.getWorksheet('Questionnaire')!
+    expect(codes(ws)).not.toContain('info:inactive_q')
+    expect(codes(ws)).toContain('info:employees')
+  })
+
+  it('ignores section-header rows (no code) on parse', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM'], {})
+    const ws = wb.getWorksheet('Questionnaire')!
+    // A section header occupies the Question column but carries no code.
+    let sawSectionHeader = false
+    ws.eachRow((r) => {
+      const code = String(r.getCell(1).value ?? '')
+      const q = String(r.getCell(3).value ?? '')
+      if (!code && /Data sources|About you/.test(q)) sawSectionHeader = true
+    })
+    expect(sawSectionHeader).toBe(true)
+
+    setAnswer(ws, 'db', 7)
+    const buf = await wb.xlsx.writeBuffer()
+    const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
+    expect(parsed.quantities).toEqual({ db: 7 })
+  })
+
+  it('VM appears only when Data Flow/ROPA is selected (gating via tags)', async () => {
+    const wbDspm = buildQuestionnaireWorkbook(form, ['DSPM'], {})
+    expect(codes(wbDspm.getWorksheet('Questionnaire')!)).not.toContain('vm')
+
     const wbDf = buildQuestionnaireWorkbook(form, ['DATA_FLOW'], {})
     const wsF = wbDf.getWorksheet('Questionnaire')!
     setAnswer(wsF, 'vm', 4)
@@ -74,7 +126,7 @@ describe('questionnaire round-trip', () => {
     const ws = wb.getWorksheet('Questionnaire')!
     const last = ws.rowCount + 1
     ws.getRow(last).getCell(1).value = 'bogus_field'
-    ws.getRow(last).getCell(3).value = 99
+    ws.getRow(last).getCell(ANSWER_COL).value = 99
     const buf = await wb.xlsx.writeBuffer()
     const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
     expect(parsed.quantities.bogus_field).toBeUndefined()
@@ -85,5 +137,20 @@ describe('questionnaire round-trip', () => {
     wb.addWorksheet('Sheet1').getCell('A1').value = 'hello'
     const buf = await wb.xlsx.writeBuffer()
     await expect(parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)).rejects.toThrow(/not a Perfios questionnaire/)
+  })
+
+  it('round-trips pre-filled values (quantities, CM tier, informational)', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], {
+      customerName: 'Prefill Co',
+      quantities: { db: 12 },
+      cmTier: 'large',
+      informationalAnswers: { employees: 42, has_dpo: false },
+    })
+    const buf = await wb.xlsx.writeBuffer()
+    const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
+    expect(parsed.quantities).toEqual({ db: 12 })
+    expect(parsed.cmTier).toBe('large')
+    expect(parsed.customerName).toBe('Prefill Co')
+    expect(parsed.informationalAnswers).toEqual({ employees: 42, has_dpo: false })
   })
 })

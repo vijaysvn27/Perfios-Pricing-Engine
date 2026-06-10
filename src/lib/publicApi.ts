@@ -5,6 +5,7 @@
 
 import { supabase } from './supabase'
 import type { ClientBreakdown } from './breakdown'
+import type { InformationalQuestion } from './engine/types'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://nljbzqcfcyltxroafloe.supabase.co'
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_uwkF6hYsL-F_CAM7jv5byw_VeuAqLES'
@@ -22,13 +23,28 @@ export interface PublicField {
   label: string
   sort_order: number
   active: boolean
+  // Questionnaire help (Stage 5). Price-stripped & optional — the engine/pricing
+  // never read these; they only drive the on-screen + Excel questionnaire copy.
+  question_text?: string | null
+  example?: string | null
+  why_text?: string | null
+  section?: string | null
+  section_sort?: number
+  item_sort?: number
 }
+/**
+ * Informational (non-priced) question returned by get_public_form. Identical shape
+ * to the engine's InformationalQuestion — it carries no prices, so the public and
+ * full versions coincide. CONTEXT ONLY: never affects pricing.
+ */
+export type PublicInformationalQuestion = InformationalQuestion
 export interface PublicForm {
   instance_name: string
   modules: PublicModule[]
   fields: PublicField[]
   module_fields: { module_key: string; field_key: string }[]
   cm_tiers: { tier_key: string; label: string }[]
+  informational_questions: PublicInformationalQuestion[]
   excel_hero: string | null
   excel_terms: string | null
 }
