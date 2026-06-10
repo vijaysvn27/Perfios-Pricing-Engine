@@ -11,7 +11,7 @@ export async function loadDraft(): Promise<DraftState> {
     supabase.from('modules').select('module_key,label,kind,pricing_type,deployment_pct,amc_pct,multiplier,applies_multiplier,active'),
     supabase.from('module_fields').select('modules(module_key),fields(field_key)'),
     supabase.from('cm_tiers').select('tier_key,label,license_fee_inr,amc_pct,implementation_fee_inr'),
-    supabase.from('settings').select('currency,deployment_pct,amc_pct,y2_includes_deployment,cm_model,rounding').eq('id', true).single(),
+    supabase.from('settings').select('currency,deployment_pct,amc_pct,y2_includes_deployment,cm_model,rounding,excel_hero,excel_terms').eq('id', true).single(),
   ])
   const err = fields.error || modules.error || mf.error || tiers.error || settings.error
   if (err) throw new Error(`loadDraft failed: ${err.message}`)

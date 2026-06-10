@@ -1,62 +1,186 @@
-// Excel export of the client-safe breakdown (SheetJS). Cost cells are numeric with
-// an Indian rupee number format (so they display as ₹17,13,800 yet stay editable),
-// plus Margin % and Final columns with live formulas for the partner to add margin.
-// No per-unit rates or rate card — only the bucket-level breakdown lines.
+// Branded Excel export (ExcelJS): blue header band, prepared-for/date, hero block,
+// headline totals, the breakdown table, and an editable Terms section. No margin
+// columns (partners add margin themselves). No per-unit rates or rate card.
 
-import * as XLSX from 'xlsx'
+import * as ExcelJS from 'exceljs'
 import { frequencyLabel } from './breakdown'
 import type { ClientBreakdown } from './breakdown'
 
-// Indian digit grouping (#,##,##0) with the rupee symbol.
-const INR_FMT = '"₹ "#,##,##0'
+const BLUE = 'FF1C58A7'
+const GREEN = 'FF37BC8B'
+const LIGHT = 'FFF1F5F9'
+const BORDER = 'FFE2E8F0'
+const INR = '"₹" #,##,##0' // ₹ with Indian digit grouping
 
-function addr(c: number, r: number): string {
-  return XLSX.utils.encode_cell({ c, r })
+export interface ExportOptions {
+  customerName?: string
+  hero?: string
+  terms?: string
 }
 
-export function exportBreakdownXlsx(breakdown: ClientBreakdown, today: Date = new Date()): void {
-  const headers = ['Line', 'Frequency', 'Year 1 (Base)', 'Year 2 (Base)', 'Margin %', 'Year 1 Final', 'Year 2 Final']
-  const ws: XLSX.WorkSheet = {}
+function thinBorder(): Partial<ExcelJS.Borders> {
+  const side: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: BORDER } }
+  return { top: side, bottom: side, left: side, right: side }
+}
 
-  headers.forEach((h, c) => {
-    ws[addr(c, 0)] = { t: 's', v: h }
-  })
+export async function exportBreakdownXlsx(
+  breakdown: ClientBreakdown,
+  opts: ExportOptions = {},
+  today: Date = new Date(),
+): Promise<void> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Pricing')
+  ws.columns = [{ width: 46 }, { width: 24 }, { width: 18 }, { width: 18 }]
 
-  breakdown.lines.forEach((l, i) => {
-    const r = i + 1 // 0-based sheet row
-    const xl = r + 1 // 1-based Excel row for formulas
-    const label =
-      l.includes && l.includes.length > 0
-        ? `${l.label} (Includes: ${l.includes.join(', ')})`
-        : l.label
-    ws[addr(0, r)] = { t: 's', v: label }
-    ws[addr(1, r)] = { t: 's', v: frequencyLabel(l.frequency) }
-    ws[addr(2, r)] = { t: 'n', v: l.year1, z: INR_FMT }
-    ws[addr(3, r)] = { t: 'n', v: l.year2, z: INR_FMT }
-    ws[addr(4, r)] = { t: 'n', v: 0, z: '0%' } // Margin % — partner edits this
-    ws[addr(5, r)] = { t: 'n', f: `C${xl}*(1+E${xl})`, z: INR_FMT } // Year 1 Final
-    ws[addr(6, r)] = { t: 'n', f: `D${xl}*(1+E${xl})`, z: INR_FMT } // Year 2 Final
-  })
+  const dateStr = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`
+  const customer = (opts.customerName ?? '').trim()
+  let r = 1
 
-  const totalR = breakdown.lines.length + 1
-  ws[addr(0, totalR)] = { t: 's', v: 'Total' }
-  if (breakdown.lines.length > 0) {
-    const first = 2
-    const last = breakdown.lines.length + 1
-    ws[addr(2, totalR)] = { t: 'n', f: `SUM(C${first}:C${last})`, z: INR_FMT }
-    ws[addr(3, totalR)] = { t: 'n', f: `SUM(D${first}:D${last})`, z: INR_FMT }
-    ws[addr(5, totalR)] = { t: 'n', f: `SUM(F${first}:F${last})`, z: INR_FMT }
-    ws[addr(6, totalR)] = { t: 'n', f: `SUM(G${first}:G${last})`, z: INR_FMT }
+  // Merge A:D on a row and return the (top-left) cell to style.
+  const band = (row: number): ExcelJS.Cell => {
+    ws.mergeCells(`A${row}:D${row}`)
+    return ws.getCell(`A${row}`)
+  }
+  const gridCell = (row: number, col: number): ExcelJS.Cell => ws.getRow(row).getCell(col)
+
+  // Title band
+  const title = band(r)
+  title.value = 'Perfios Pricing Estimate'
+  title.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } }
+  title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE } }
+  title.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 }
+  ws.getRow(r).height = 30
+  r += 1
+
+  // Prepared for / date
+  const pf = band(r)
+  pf.value = customer ? `Prepared for: ${customer}` : 'Prepared for: ______________________'
+  pf.font = { bold: true, size: 11, color: { argb: BLUE } }
+  pf.alignment = { indent: 1 }
+  r += 1
+  const dt = band(r)
+  dt.value = `Date: ${dateStr}`
+  dt.font = { size: 10, color: { argb: 'FF64748B' } }
+  dt.alignment = { indent: 1 }
+  r += 2
+
+  // Hero
+  const hero = (opts.hero ?? '').trim()
+  if (hero) {
+    const h = band(r)
+    h.value = hero
+    h.font = { italic: true, size: 11, color: { argb: 'FF334155' } }
+    h.alignment = { wrapText: true, vertical: 'top' }
+    ws.getRow(r).height = 46
+    r += 2
   }
 
-  ws['!ref'] = XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: 6, r: totalR } })
-  ws['!cols'] = [
-    { wch: 44 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 16 },
-  ]
+  // Headline totals
+  const ht1 = gridCell(r, 1)
+  ht1.value = 'Year 1 Total'
+  ht1.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  ht1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } }
+  const hv1 = gridCell(r, 2)
+  hv1.value = breakdown.year1Total
+  hv1.numFmt = INR
+  hv1.font = { bold: true }
+  hv1.alignment = { horizontal: 'right' }
+  const ht2 = gridCell(r, 3)
+  ht2.value = 'Year 2 Total'
+  ht2.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  ht2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } }
+  const hv2 = gridCell(r, 4)
+  hv2.value = breakdown.year2Total
+  hv2.numFmt = INR
+  hv2.font = { bold: true }
+  hv2.alignment = { horizontal: 'right' }
+  r += 2
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Pricing')
+  // Table header
+  const headers = ['Line', 'Frequency', 'Year 1', 'Year 2']
+  headers.forEach((text, i) => {
+    const c = gridCell(r, i + 1)
+    c.value = text
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE } }
+    c.alignment = { horizontal: i >= 2 ? 'right' : 'left' }
+    c.border = thinBorder()
+  })
+  r += 1
 
-  const d = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `Perfios-Pricing-${d}.xlsx`)
+  // Data rows
+  breakdown.lines.forEach((l, idx) => {
+    const label =
+      l.includes && l.includes.length > 0
+        ? `${l.label}\nIncludes: ${l.includes.join(', ')}`
+        : l.label
+    const values: Array<string | number> = [label, frequencyLabel(l.frequency), l.year1, l.year2]
+    values.forEach((val, i) => {
+      const c = gridCell(r, i + 1)
+      c.value = val
+      c.border = thinBorder()
+      if (i >= 2) {
+        c.numFmt = INR
+        c.alignment = { horizontal: 'right' }
+      } else if (i === 0) {
+        c.alignment = { wrapText: true, vertical: 'top' }
+      }
+      if (idx % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT } }
+    })
+    r += 1
+  })
+
+  // Total row
+  const totals: Array<string | number> = ['Total', '', breakdown.year1Total, breakdown.year2Total]
+  totals.forEach((val, i) => {
+    const c = gridCell(r, i + 1)
+    c.value = val
+    c.font = { bold: true }
+    c.border = thinBorder()
+    if (i >= 2) {
+      c.numFmt = INR
+      c.alignment = { horizontal: 'right' }
+    }
+  })
+  r += 2
+
+  // Terms
+  const termsLines = (opts.terms ?? '')
+    .split('\n')
+    .map((t) => t.trim())
+    .filter(Boolean)
+  if (termsLines.length > 0) {
+    const th = band(r)
+    th.value = 'Terms & Notes'
+    th.font = { bold: true, size: 11, color: { argb: BLUE } }
+    r += 1
+    for (const line of termsLines) {
+      const c = band(r)
+      c.value = `•  ${line}`
+      c.font = { size: 10, color: { argb: 'FF334155' } }
+      c.alignment = { wrapText: true, vertical: 'top' }
+      r += 1
+    }
+    r += 1
+  }
+
+  // Footer
+  const foot = band(r)
+  foot.value = `Generated on ${dateStr}. Base cost only; figures in INR.`
+  foot.font = { size: 9, italic: true, color: { argb: 'FF94A3B8' } }
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer as unknown as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const safeCustomer = customer
+    ? `-${customer.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}`
+    : ''
+  const fileDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  a.href = url
+  a.download = `Perfios-Pricing${safeCustomer}-${fileDate}.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
 }

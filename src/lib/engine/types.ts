@@ -70,6 +70,12 @@ export interface Settings {
   y2_includes_deployment: boolean
   cm_model: CmModel
   rounding: string
+  /**
+   * Export document copy (Excel hero + terms). Engine IGNORES these — they are
+   * presentation content, not pricing. Optional so existing fixtures stay valid.
+   */
+  excel_hero?: string
+  excel_terms?: string
 }
 
 /** The full published config the engine consumes. Mirrors config_versions.snapshot. */

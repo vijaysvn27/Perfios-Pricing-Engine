@@ -5,6 +5,8 @@ import { loadLiveConfig } from '../lib/supabase'
 import { formatINR } from '../lib/format'
 import { buildClientBreakdown, frequencyLabel } from '../lib/breakdown'
 import { exportBreakdownXlsx } from '../lib/excel'
+import { loadMyExportPrefs, saveMyExportPrefs } from '../lib/exportPrefs'
+import { DEFAULT_HERO, DEFAULT_TERMS } from '../lib/exportDefaults'
 
 export default function Calculator() {
   const [config, setConfig] = useState<ConfigSnapshot | null>(null)
@@ -41,6 +43,36 @@ export default function Calculator() {
     () => (result && config ? buildClientBreakdown(result, config) : null),
     [result, config],
   )
+
+  // Export document copy: customer name is per-quote; hero/terms pre-fill from the
+  // user's saved prefs, else the live config baseline, else the built-in default.
+  const [customerName, setCustomerName] = useState('')
+  const [hero, setHero] = useState('')
+  const [terms, setTerms] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+
+  useEffect(() => {
+    if (!config) return
+    let active = true
+    void loadMyExportPrefs().then((prefs) => {
+      if (!active) return
+      setHero(prefs?.hero || config.settings.excel_hero || DEFAULT_HERO)
+      setTerms(prefs?.terms || config.settings.excel_terms || DEFAULT_TERMS)
+    })
+    return () => {
+      active = false
+    }
+  }, [config])
+
+  async function onSaveDefaults() {
+    setSaveState('saving')
+    try {
+      await saveMyExportPrefs({ hero, terms })
+      setSaveState('saved')
+    } catch {
+      setSaveState('idle')
+    }
+  }
 
   function toggleModule(key: string) {
     setResult(null)
@@ -179,19 +211,9 @@ export default function Calculator() {
 
       {breakdown && (
         <section className="mt-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Pricing breakdown
-            </h2>
-            <button
-              type="button"
-              onClick={() => exportBreakdownXlsx(breakdown)}
-              disabled={breakdown.lines.length === 0}
-              className="rounded-lg border border-perfios-green px-4 py-2 text-sm font-semibold text-perfios-green transition hover:bg-perfios-green hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Download Excel
-            </button>
-          </div>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Pricing breakdown
+          </h2>
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <table className="w-full text-sm">
@@ -230,6 +252,63 @@ export default function Calculator() {
             Base cost only, per the published configuration. Partners add their own margin in the
             downloaded Excel.
           </p>
+
+          <div className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-700">Quote document</h3>
+            <label className="block">
+              <span className="text-sm text-slate-600">Customer name</span>
+              <input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="e.g. Acme Bank"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-slate-600">Hero text</span>
+              <textarea
+                rows={2}
+                value={hero}
+                onChange={(e) => {
+                  setHero(e.target.value)
+                  setSaveState('idle')
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-slate-600">
+                Terms &amp; Conditions <span className="text-slate-400">(one per line)</span>
+              </span>
+              <textarea
+                rows={4}
+                value={terms}
+                onChange={(e) => {
+                  setTerms(e.target.value)
+                  setSaveState('idle')
+                }}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void exportBreakdownXlsx(breakdown, { customerName, hero, terms })}
+                disabled={breakdown.lines.length === 0}
+                className="rounded-lg bg-perfios-green px-5 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Download Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => void onSaveDefaults()}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save as my default'}
+              </button>
+              <span className="text-xs text-slate-400">Hero &amp; terms are remembered for next time.</span>
+            </div>
+          </div>
         </section>
       )}
     </div>
