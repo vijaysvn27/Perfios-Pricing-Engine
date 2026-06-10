@@ -18,8 +18,8 @@ import type {
   LineItem,
   ModuleDef,
   Selections,
-} from './types'
-import { applyRatio } from './money'
+} from './types.ts'
+import { applyRatio } from './money.ts'
 
 /** Stable module keys the engine recognises for special handling. */
 export const MODULE_KEY = {

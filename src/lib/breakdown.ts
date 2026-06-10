@@ -3,7 +3,7 @@
 // bucket-level numbers (base / deployment / amc / license / impl), never the
 // per-field `lines`. Pure and deterministic; no engine math is performed here.
 
-import type { ConfigSnapshot, EngineResult } from './engine'
+import type { ConfigSnapshot, EngineResult } from './engine/index.ts'
 
 export type ClientFrequency = 'one_time' | 'recurring'
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import Calculator from './components/Calculator'
 import AdminApp from './admin/AdminApp'
 import Login from './auth/Login'
+import PublicCalculator from './components/PublicCalculator'
 import { useAuth } from './auth/useAuth'
 
 export default function App() {
@@ -14,15 +14,11 @@ export default function App() {
     return () => window.removeEventListener('hashchange', on)
   }, [])
 
-  const isAdmin = role === 'admin'
-  const wantsAdmin = hash.startsWith('#/admin')
-
-  // Bounce a non-admin away from the admin route.
-  useEffect(() => {
-    if (session && role && !isAdmin && wantsAdmin) {
-      window.location.hash = '#/'
-    }
-  }, [session, role, isAdmin, wantsAdmin])
+  // No-login instance calculator — prices server-side; never receives the rate card.
+  const publicMatch = hash.match(/^#\/c\/([^/?#]+)/)
+  if (publicMatch) {
+    return <PublicCalculator token={decodeURIComponent(publicMatch[1])} />
+  }
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-slate-500">Loading…</div>
@@ -31,15 +27,12 @@ export default function App() {
     return <Login />
   }
 
-  const showAdmin = wantsAdmin && isAdmin
+  const isAdmin = role === 'admin'
 
   return (
     <div>
       <nav className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2 text-sm">
-        <a href="#/" className={showAdmin ? 'text-slate-500' : 'font-semibold text-perfios-blue'}>Calculator</a>
-        {isAdmin && (
-          <a href="#/admin" className={showAdmin ? 'font-semibold text-perfios-blue' : 'text-slate-500'}>Admin</a>
-        )}
+        <span className="font-semibold text-perfios-blue">Perfios Pricing</span>
         <span className="ml-auto text-xs text-slate-400">{user?.email}</span>
         <button
           type="button"
@@ -49,7 +42,14 @@ export default function App() {
           Sign out
         </button>
       </nav>
-      {showAdmin ? <AdminApp /> : <Calculator />}
+      {isAdmin ? (
+        <AdminApp />
+      ) : (
+        <div className="mx-auto max-w-2xl p-8 text-slate-600">
+          You're signed in, but this account isn't an admin. Open the pricing link shared with you to
+          generate a quote.
+        </div>
+      )}
     </div>
   )
 }

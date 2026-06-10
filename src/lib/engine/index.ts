@@ -1,5 +1,5 @@
-export { calculatePricing, MODULE_KEY } from './engine'
-export { applyRatio, toBasisPoints } from './money'
+export { calculatePricing, MODULE_KEY } from './engine.ts'
+export { applyRatio, toBasisPoints } from './money.ts'
 export type {
   BucketBreakdown,
   BucketKind,
@@ -16,4 +16,4 @@ export type {
   PricingType,
   Selections,
   Settings,
-} from './types'
+} from './types.ts'
