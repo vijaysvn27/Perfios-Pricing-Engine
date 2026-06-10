@@ -3,6 +3,8 @@ import type { ChangeEvent } from 'react'
 import {
   getPublicForm,
   priceInstance,
+  storeQuote,
+  logQuoteEvent,
   type PriceResult,
   type PublicForm,
   type PublicInformationalQuestion,
@@ -132,13 +134,27 @@ export default function PublicCalculator({ token }: { token: string }) {
   }
 
   function onGenerateQuestionnaire() {
-    if (!form) return
+    if (!form || !customerName.trim()) return
     void generateQuestionnaireXlsx(form, [...selected], {
       customerName,
       quantities,
       cmTier: tierSelected ? cmTier || null : null,
       informationalAnswers: infoAnswers,
     })
+    // Best-effort: every questionnaire download is linked to a customer.
+    void logQuoteEvent(token, 'questionnaire_download', customerName).catch(() => {})
+  }
+
+  function onDownloadExcel() {
+    if (!result?.breakdown || !customerName.trim()) return
+    void exportBreakdownXlsx(result.breakdown, { customerName, hero, terms })
+    // Best-effort persistence: the server recomputes pricing and stores the quote +
+    // a pricing_download event. Never blocks the download.
+    void storeQuote(token, {
+      selections: { moduleKeys: [...selected], quantities, cmTier: tierSelected ? cmTier || null : null },
+      customerName,
+      informationalAnswers: infoAnswers,
+    }).catch(() => {})
   }
 
   async function onUploadQuestionnaire(e: ChangeEvent<HTMLInputElement>) {
@@ -197,7 +213,10 @@ export default function PublicCalculator({ token }: { token: string }) {
   }
 
   const modules = form.modules.filter((m) => m.active)
+  // Calculate is a price PREVIEW — it stores nothing, so it does NOT require a name.
   const canCalculate = selected.size > 0 && (!tierSelected || cmTier !== '')
+  // Both downloads persist a customer, so they require a non-empty name.
+  const hasCustomer = customerName.trim().length > 0
   const breakdown = result?.breakdown ?? null
 
   const inputClass =
@@ -305,6 +324,22 @@ export default function PublicCalculator({ token }: { token: string }) {
       </header>
 
       <section className="mb-8">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Who is this quote for?</h2>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <label className="block">
+            <span className="text-sm text-slate-600">Customer name</span>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="e.g. Acme Bank"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
+            />
+          </label>
+          <p className="mt-2 text-xs text-slate-400">Required to download the questionnaire or the pricing Excel. You can still Calculate a preview without it.</p>
+        </div>
+      </section>
+
+      <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">1. Choose modules</h2>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {modules.map((m) => {
@@ -330,7 +365,8 @@ export default function PublicCalculator({ token }: { token: string }) {
             <button
               type="button"
               onClick={onGenerateQuestionnaire}
-              className="rounded-lg border border-perfios-blue px-4 py-2 text-sm font-medium text-perfios-blue transition hover:bg-perfios-blue hover:text-white"
+              disabled={!hasCustomer}
+              className="rounded-lg border border-perfios-blue px-4 py-2 text-sm font-medium text-perfios-blue transition hover:bg-perfios-blue hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-perfios-blue"
             >
               Download questionnaire
             </button>
@@ -340,6 +376,7 @@ export default function PublicCalculator({ token }: { token: string }) {
             </label>
             <span className="text-xs text-slate-400">Or just answer the questions below.</span>
           </div>
+          {!hasCustomer && <p className="mt-2 text-xs text-amber-600">Enter a customer name above to download the questionnaire.</p>}
           {uploadError && <p className="mt-2 text-xs text-red-600">{uploadError}</p>}
         </section>
       )}
@@ -430,15 +467,10 @@ export default function PublicCalculator({ token }: { token: string }) {
 
           <div className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
             <h3 className="text-sm font-semibold text-slate-700">Quote document</h3>
-            <label className="block">
-              <span className="text-sm text-slate-600">Customer name</span>
-              <input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="e.g. Acme Bank"
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
-              />
-            </label>
+            <p className="text-xs text-slate-500">
+              Quote for <span className="font-medium text-slate-700">{customerName.trim() || '—'}</span>
+              {!hasCustomer && <span className="text-amber-600"> · enter a customer name above to download.</span>}
+            </p>
             <label className="block">
               <span className="text-sm text-slate-600">Hero text</span>
               <textarea rows={2} value={hero} onChange={(e) => { setHero(e.target.value); setSaved(false) }} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none" />
@@ -450,8 +482,9 @@ export default function PublicCalculator({ token }: { token: string }) {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => void exportBreakdownXlsx(breakdown, { customerName, hero, terms })}
-                className="rounded-lg bg-perfios-green px-5 py-2 text-sm font-semibold text-white transition hover:brightness-95"
+                onClick={onDownloadExcel}
+                disabled={!hasCustomer}
+                className="rounded-lg bg-perfios-green px-5 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Download Excel
               </button>

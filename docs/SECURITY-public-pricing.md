@@ -17,6 +17,7 @@ reaches the browser**.
 | `get_published_config(token)` | **Full snapshot incl. `unit_price`** | **`service_role` ONLY** | anon=false, authenticated=false, security_definer=true (verified). Called only by the Edge Function. No `is_admin()` body check — that would break the service-role caller. |
 | `get_public_form(token)` | Price-**stripped** form (module/field/tier *labels*, tags, export copy) | anon, authenticated, service_role | No `unit_price`, no fees, no deployment/amc %, no `cm_model`. |
 | `hit_rate_limit(bucket,max,window)` | bool (allowed) | `service_role` ONLY | Fixed-window counter in `public.rate_limits`. |
+| `log_quote_event(token,event_type,name)` | — | anon, authenticated (public revoked) | security_definer. Allow-lists `event_type` (`questionnaire_download` only); resolves the instance from the token (silent no-op on unknown/inactive); rate-limited per token via `hit_rate_limit`; bounds name length. Writes one `quote_events` row. No rate-bearing data in or out. |
 | `publish_snapshot` / `rollback_to_version` / `reset_draft_to_live` / `set_field_tag` / `clone_instance` / `rename_instance` / `regenerate_token` | — | `authenticated` (anon revoked) | All guarded by `is_admin()` in the body. |
 
 `config_versions` and the draft tables (`fields`/`modules`/`module_fields`/
@@ -36,12 +37,36 @@ anon read** of any rate-bearing data.
 - Errors are generic (`not available`, `invalid request`, `rate limit exceeded`) —
   no rates in any error/debug output.
 
+## `store-quote` Edge Function (public, `verify_jwt=false`)
+Fired (best-effort) when the customer downloads the pricing Excel. Persists a quote
+for the admin; the download itself is never blocked by it.
+- Service role only; resolves the instance from the token (RLS-bypassing read);
+  invalid/inactive token → **404**.
+- **RECOMPUTES** pricing with the same bundled engine + `buildClientBreakdown` from
+  `get_published_config` — client-supplied prices are never trusted or stored. Only
+  the server-recomputed `year1`/`year2` + client-safe breakdown are written.
+- Validates selections (known module/field/tier keys, quantities numeric ≥ 0).
+- **Caps & sanitises** the anon informational answers: known `question_key`s only,
+  bounded key count (100) / value length (1000) / total size (8 KB); name ≤ 200 chars.
+- Writes `customers` (upsert by `(instance,name)`), `quotes`, and a `pricing_download`
+  `quote_events` row via the service role (tables expose no anon read/write).
+- Returns **only** `{ ok, quoteId }` — no prices, no snapshot. Rate-limited 30/60s/IP.
+- Informational answers are **stored only** here; they never appear on the customer's
+  pricing Excel.
+
+The persistence tables (`customers`/`quotes`/`quote_events`) are **admin-read-only**
+via RLS; anon has no read path. Both new public paths return zero rate-bearing data.
+
 ## Verified (live)
 - `price-instance` valid token → results only; **no `unit_price`**, no admin breakdown.
 - Invalid / regenerated / inactive token → **404**, empty.
 - `get_public_form` (anon) → no `unit_price` / `license_fee` / `deployment_pct`.
 - `get_published_config` (anon, authenticated) → **blocked** (401 / no privilege).
 - `hit_rate_limit` → blocks past the limit.
+- `store-quote` valid token → `{ ok, quoteId }` only (**no prices**); stored `year1/year2`
+  are **server-recomputed**; unknown informational keys dropped; `pricing_download`
+  event written. `log_quote_event` (valid token) → one `questionnaire_download` row;
+  unknown token → silent no-op; bad `event_type` → rejected.
 
 ## Follow-ups
 - Delete the decommissioned `engine-poc` Edge Function from the dashboard.

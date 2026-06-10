@@ -82,3 +82,41 @@ export async function priceInstance(token: string, selections: PublicSelections)
   if (!res.ok) throw new Error('Could not calculate pricing for this link.')
   return (await res.json()) as PriceResult
 }
+
+export interface StoreQuotePayload {
+  selections: PublicSelections
+  customerName: string
+  /** Stored only (for the admin) — never on the customer's pricing Excel. */
+  informationalAnswers: Record<string, string | number | boolean>
+}
+
+/**
+ * Persist a quote + a `pricing_download` event when the customer downloads the
+ * pricing Excel. The Edge Function RECOMPUTES pricing server-side; client prices are
+ * never trusted. Best-effort: the download itself must never be blocked by this, so
+ * the caller fires it without awaiting success and ignores failures.
+ */
+export async function storeQuote(token: string, payload: StoreQuotePayload): Promise<void> {
+  await fetch(`${SUPABASE_URL}/functions/v1/store-quote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${ANON_KEY}`,
+    },
+    body: JSON.stringify({ token, ...payload }),
+  })
+}
+
+/**
+ * Log a lightweight client event (currently `questionnaire_download`) via the
+ * rate-limited, anon-callable RPC. Best-effort — failures are ignored by the caller.
+ */
+export async function logQuoteEvent(token: string, eventType: string, customerName: string): Promise<void> {
+  const { error } = await supabase.rpc('log_quote_event', {
+    p_token: token,
+    p_event_type: eventType,
+    p_customer_name: customerName || null,
+  })
+  if (error) throw new Error(error.message)
+}
