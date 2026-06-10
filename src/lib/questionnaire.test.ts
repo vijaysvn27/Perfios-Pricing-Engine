@@ -88,7 +88,7 @@ describe('questionnaire round-trip', () => {
     const buf = await wb.xlsx.writeBuffer()
     const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
     expect(parsed.quantities).toEqual({ db: 4 })
-    expect((parsed as Record<string, unknown>).cmTier).toBeUndefined()
+    expect((parsed as unknown as Record<string, unknown>).cmTier).toBeUndefined()
   })
 
   it('captures informational answers separately and NEVER in quantities', async () => {
