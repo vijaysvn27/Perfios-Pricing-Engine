@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { getPublicForm, priceInstance, type PriceResult, type PublicField, type PublicForm } from '../lib/publicApi'
 import { frequencyLabel } from '../lib/breakdown'
 import { formatINR } from '../lib/format'
 import { exportBreakdownXlsx } from '../lib/excel'
 import { DEFAULT_HERO, DEFAULT_TERMS } from '../lib/exportDefaults'
+import { generateQuestionnaireXlsx, parseQuestionnaireBuffer } from '../lib/questionnaire'
 
 export default function PublicCalculator({ token }: { token: string }) {
   const [form, setForm] = useState<PublicForm | null>(null)
@@ -20,6 +22,7 @@ export default function PublicCalculator({ token }: { token: string }) {
   const [hero, setHero] = useState('')
   const [terms, setTerms] = useState('')
   const [saved, setSaved] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
     getPublicForm(token)
@@ -76,6 +79,29 @@ export default function PublicCalculator({ token }: { token: string }) {
     setResult(null)
     const n = Math.max(0, Math.trunc(Number(value) || 0))
     setQuantities((prev) => ({ ...prev, [fieldKey]: n }))
+  }
+
+  function onGenerateQuestionnaire() {
+    if (!form) return
+    void generateQuestionnaireXlsx(form, [...selected], { customerName })
+  }
+
+  async function onUploadQuestionnaire(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-uploading the same file
+    if (!file || !form) return
+    setUploadError(null)
+    try {
+      const buf = await file.arrayBuffer()
+      const parsed = await parseQuestionnaireBuffer(buf, form)
+      setSelected(new Set(parsed.moduleKeys))
+      setQuantities(parsed.quantities)
+      setCmTier(parsed.cmTier ?? '')
+      if (parsed.customerName) setCustomerName(parsed.customerName)
+      setResult(null)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function onCalculate() {
@@ -141,6 +167,27 @@ export default function PublicCalculator({ token }: { token: string }) {
           })}
         </div>
       </section>
+
+      {selected.size > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Questionnaire (optional)</h2>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-4">
+            <button
+              type="button"
+              onClick={onGenerateQuestionnaire}
+              className="rounded-lg border border-perfios-blue px-4 py-2 text-sm font-medium text-perfios-blue transition hover:bg-perfios-blue hover:text-white"
+            >
+              Download questionnaire
+            </button>
+            <label className="cursor-pointer rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50">
+              Upload filled questionnaire
+              <input type="file" accept=".xlsx" className="hidden" onChange={onUploadQuestionnaire} />
+            </label>
+            <span className="text-xs text-slate-400">Or just fill the quantities below manually.</span>
+          </div>
+          {uploadError && <p className="mt-2 text-xs text-red-600">{uploadError}</p>}
+        </section>
+      )}
 
       {(visibleFields.length > 0 || tierSelected) && (
         <section className="mb-8">

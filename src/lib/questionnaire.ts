@@ -1,0 +1,167 @@
+// Per-customer questionnaire round-trip. The generator and the parser share ONE
+// schema (the constants + cell layout below), so a filled file re-uploads
+// losslessly. Contains NO prices — only questions and answer cells. Built from the
+// price-stripped public form.
+
+import * as ExcelJS from 'exceljs'
+import type { PublicField, PublicForm } from './publicApi'
+
+export const QUESTIONNAIRE_MARKER = 'PERFIOS_QUESTIONNAIRE_V1'
+export const CM_TIER_CODE = '__cm_tier__'
+const META_SHEET = '_perfios_meta'
+const QUESTION_SHEET = 'Questionnaire'
+const HEADER_ROW = 5
+
+export interface ParsedQuestionnaire {
+  moduleKeys: string[]
+  quantities: Record<string, number>
+  cmTier: string | null
+  customerName: string
+}
+
+/** Active fields tagged to the selected modules (union; VM gating falls out of the tags). */
+function applicableFields(form: PublicForm, moduleKeys: string[]): PublicField[] {
+  const byKey = new Map(form.fields.map((f) => [f.field_key, f]))
+  const sel = new Set(moduleKeys)
+  const keys = new Set<string>()
+  for (const tag of form.module_fields) {
+    if (sel.has(tag.module_key) && byKey.has(tag.field_key)) keys.add(tag.field_key)
+  }
+  return [...keys].map((k) => byKey.get(k)!).filter((f) => f.active).sort((a, b) => a.sort_order - b.sort_order)
+}
+
+function tierSelected(form: PublicForm, moduleKeys: string[]): boolean {
+  const sel = new Set(moduleKeys)
+  return form.modules.some((m) => sel.has(m.module_key) && m.pricing_type === 'tier')
+}
+
+export function buildQuestionnaireWorkbook(
+  form: PublicForm,
+  moduleKeys: string[],
+  opts: { customerName?: string } = {},
+): ExcelJS.Workbook {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet(QUESTION_SHEET)
+  ws.columns = [{ width: 18 }, { width: 50 }, { width: 18 }]
+  ws.getColumn(1).hidden = true // Field Code (technical, do not edit)
+
+  ws.mergeCells('B1:C1')
+  const title = ws.getCell('B1')
+  title.value = `Pricing questionnaire — ${form.instance_name}`
+  title.font = { bold: true, size: 14, color: { argb: 'FF1C58A7' } }
+
+  ws.getCell('B2').value = 'Customer (optional):'
+  ws.getCell('C2').value = opts.customerName ?? ''
+  ws.getCell('B3').value = 'Fill the Answer column, then upload this file back into the calculator.'
+  ws.getCell('B3').font = { italic: true, size: 10, color: { argb: 'FF64748B' } }
+
+  const header = ['Field Code', 'Question', 'Answer']
+  const headerRow = ws.getRow(HEADER_ROW)
+  header.forEach((h, i) => {
+    const c = headerRow.getCell(i + 1)
+    c.value = h
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C58A7' } }
+  })
+
+  const answerBorder = { bottom: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } } }
+  let r = HEADER_ROW + 1
+  for (const f of applicableFields(form, moduleKeys)) {
+    const row = ws.getRow(r)
+    row.getCell(1).value = f.field_key
+    row.getCell(2).value = f.label
+    const ans = row.getCell(3)
+    ans.value = null
+    ans.border = answerBorder
+    r += 1
+  }
+
+  if (tierSelected(form, moduleKeys) && form.cm_tiers.length > 0) {
+    const row = ws.getRow(r)
+    row.getCell(1).value = CM_TIER_CODE
+    row.getCell(2).value = 'Consent Manager tier'
+    const ans = row.getCell(3)
+    ans.dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [`"${form.cm_tiers.map((t) => t.label).join(',')}"`],
+    }
+    ans.border = answerBorder
+  }
+
+  // Hidden machine-readable metadata: marker + selected modules.
+  const meta = wb.addWorksheet(META_SHEET)
+  meta.state = 'veryHidden'
+  meta.getCell('A1').value = QUESTIONNAIRE_MARKER
+  meta.getCell('A2').value = moduleKeys.join(',')
+
+  return wb
+}
+
+export async function generateQuestionnaireXlsx(
+  form: PublicForm,
+  moduleKeys: string[],
+  opts: { customerName?: string } = {},
+  today: Date = new Date(),
+): Promise<void> {
+  const wb = buildQuestionnaireWorkbook(form, moduleKeys, opts)
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer as unknown as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const d = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  a.href = url
+  a.download = `Perfios-Questionnaire-${d}.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/** Parse a filled questionnaire. Throws if the file is not a Perfios questionnaire. */
+export async function parseQuestionnaireBuffer(buffer: ArrayBuffer, form: PublicForm): Promise<ParsedQuestionnaire> {
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(buffer)
+
+  const meta = wb.getWorksheet(META_SHEET)
+  if (!meta || String(meta.getCell('A1').value ?? '') !== QUESTIONNAIRE_MARKER) {
+    throw new Error('This file is not a Perfios questionnaire. Please upload the file generated by this calculator.')
+  }
+
+  const knownModules = new Set(form.modules.map((m) => m.module_key))
+  const moduleKeys = String(meta.getCell('A2').value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((k) => k && knownModules.has(k))
+
+  const knownFields = new Set(form.fields.map((f) => f.field_key))
+  const tierByLabel = new Map(form.cm_tiers.map((t) => [t.label, t.tier_key]))
+
+  const quantities: Record<string, number> = {}
+  let cmTier: string | null = null
+  let customerName = ''
+
+  const ws = wb.getWorksheet(QUESTION_SHEET) ?? wb.worksheets.find((w) => w.name !== META_SHEET)
+  if (ws) {
+    customerName = String(ws.getCell('C2').value ?? '').trim()
+    ws.eachRow((row) => {
+      const code = String(row.getCell(1).value ?? '').trim()
+      if (!code || code === 'Field Code') return
+      let raw: unknown = row.getCell(3).value
+      if (raw && typeof raw === 'object' && 'result' in (raw as Record<string, unknown>)) {
+        raw = (raw as { result?: unknown }).result
+      }
+      if (code === CM_TIER_CODE) {
+        const label = String(raw ?? '').trim()
+        cmTier = tierByLabel.get(label) ?? null
+        return
+      }
+      if (!knownFields.has(code)) return // ignore unknown / extra rows
+      if (raw === null || raw === undefined || raw === '') return
+      const n = Number(raw)
+      if (Number.isFinite(n) && n >= 0) quantities[code] = Math.trunc(n)
+    })
+  }
+
+  return { moduleKeys, quantities, cmTier, customerName }
+}
