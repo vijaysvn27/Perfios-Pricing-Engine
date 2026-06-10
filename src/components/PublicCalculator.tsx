@@ -1,11 +1,40 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { getPublicForm, priceInstance, type PriceResult, type PublicField, type PublicForm } from '../lib/publicApi'
+import {
+  getPublicForm,
+  priceInstance,
+  type PriceResult,
+  type PublicForm,
+  type PublicInformationalQuestion,
+} from '../lib/publicApi'
 import { frequencyLabel } from '../lib/breakdown'
 import { formatINR } from '../lib/format'
 import { exportBreakdownXlsx } from '../lib/excel'
 import { DEFAULT_HERO, DEFAULT_TERMS } from '../lib/exportDefaults'
-import { generateQuestionnaireXlsx, parseQuestionnaireBuffer } from '../lib/questionnaire'
+import {
+  generateQuestionnaireXlsx,
+  parseQuestionnaireBuffer,
+  orderedSections,
+  sectionLetter,
+  type InfoAnswer,
+  type QSectionItem,
+} from '../lib/questionnaire'
+
+type InfoAnswers = Record<string, InfoAnswer>
+
+/** Native-tooltip info marker for the "why this is needed" copy. */
+function WhyTip({ text }: { text: string }) {
+  if (!text) return null
+  return (
+    <span
+      title={text}
+      aria-label={text}
+      className="cursor-help select-none text-slate-400 transition hover:text-perfios-blue"
+    >
+      &#9432;
+    </span>
+  )
+}
 
 export default function PublicCalculator({ token }: { token: string }) {
   const [form, setForm] = useState<PublicForm | null>(null)
@@ -14,6 +43,7 @@ export default function PublicCalculator({ token }: { token: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [cmTier, setCmTier] = useState<string>('')
+  const [infoAnswers, setInfoAnswers] = useState<InfoAnswers>({})
   const [result, setResult] = useState<PriceResult | null>(null)
   const [pricing, setPricing] = useState(false)
   const [priceError, setPriceError] = useState<string | null>(null)
@@ -49,21 +79,14 @@ export default function PublicCalculator({ token }: { token: string }) {
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
   }, [token])
 
-  // Quantity questions = union of fields tagged to the selected modules.
-  const visibleFields: PublicField[] = useMemo(() => {
-    if (!form) return []
-    const byKey = new Map(form.fields.map((f) => [f.field_key, f]))
-    const keys = new Set<string>()
-    for (const tag of form.module_fields) {
-      if (selected.has(tag.module_key) && byKey.has(tag.field_key)) keys.add(tag.field_key)
-    }
-    return [...keys].map((k) => byKey.get(k)!).filter((f) => f.active).sort((a, b) => a.sort_order - b.sort_order)
-  }, [form, selected])
-
   const tierSelected = useMemo(
     () => !!form && form.modules.some((m) => selected.has(m.module_key) && m.pricing_type === 'tier'),
     [form, selected],
   )
+
+  // Unified, sectioned question list shared with the Excel questionnaire so the
+  // on-screen order and numbering match the downloaded file exactly.
+  const sections = useMemo(() => (form ? orderedSections(form, [...selected]) : []), [form, selected])
 
   function toggleModule(key: string) {
     setResult(null)
@@ -81,9 +104,41 @@ export default function PublicCalculator({ token }: { token: string }) {
     setQuantities((prev) => ({ ...prev, [fieldKey]: n }))
   }
 
+  // Informational answers are OPTIONAL context — they never affect pricing, so they
+  // do NOT clear the result and never gate Calculate/Download.
+  function setInfo(key: string, type: PublicInformationalQuestion['answer_type'], value: string) {
+    setInfoAnswers((prev) => {
+      const next = { ...prev }
+      if (value === '') {
+        delete next[key]
+      } else if (type === 'number') {
+        const n = Number(value)
+        if (Number.isFinite(n)) next[key] = n
+        else delete next[key]
+      } else if (type === 'yes_no') {
+        next[key] = value === 'Yes'
+      } else {
+        next[key] = value
+      }
+      return next
+    })
+  }
+
+  function infoStr(key: string): string {
+    const v = infoAnswers[key]
+    if (v === undefined) return ''
+    if (typeof v === 'boolean') return v ? 'Yes' : 'No'
+    return String(v)
+  }
+
   function onGenerateQuestionnaire() {
     if (!form) return
-    void generateQuestionnaireXlsx(form, [...selected], { customerName })
+    void generateQuestionnaireXlsx(form, [...selected], {
+      customerName,
+      quantities,
+      cmTier: tierSelected ? cmTier || null : null,
+      informationalAnswers: infoAnswers,
+    })
   }
 
   async function onUploadQuestionnaire(e: ChangeEvent<HTMLInputElement>) {
@@ -97,6 +152,7 @@ export default function PublicCalculator({ token }: { token: string }) {
       setSelected(new Set(parsed.moduleKeys))
       setQuantities(parsed.quantities)
       setCmTier(parsed.cmTier ?? '')
+      setInfoAnswers(parsed.informationalAnswers)
       if (parsed.customerName) setCustomerName(parsed.customerName)
       setResult(null)
     } catch (err) {
@@ -108,6 +164,8 @@ export default function PublicCalculator({ token }: { token: string }) {
     setPricing(true)
     setPriceError(null)
     try {
+      // Pricing payload carries ONLY moduleKeys + quantities + cmTier. Informational
+      // answers are deliberately excluded — they must never reach the engine.
       const r = await priceInstance(token, {
         moduleKeys: [...selected],
         quantities,
@@ -141,6 +199,103 @@ export default function PublicCalculator({ token }: { token: string }) {
   const modules = form.modules.filter((m) => m.active)
   const canCalculate = selected.size > 0 && (!tierSelected || cmTier !== '')
   const breakdown = result?.breakdown ?? null
+
+  const inputClass =
+    'rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none'
+
+  function renderInput(item: QSectionItem) {
+    if (item.kind === 'field' && item.field) {
+      return (
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={quantities[item.field.field_key] ?? 0}
+          onChange={(e) => setQuantity(item.field!.field_key, e.target.value)}
+          className={`w-32 text-right ${inputClass}`}
+        />
+      )
+    }
+    if (item.kind === 'cm') {
+      return (
+        <select
+          value={cmTier}
+          onChange={(e) => {
+            setResult(null)
+            setCmTier(e.target.value)
+          }}
+          className={`w-48 ${inputClass}`}
+        >
+          <option value="">Select a tier…</option>
+          {form!.cm_tiers.map((t) => (
+            <option key={t.tier_key} value={t.tier_key}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    const q = item.info!
+    const key = q.question_key
+    switch (q.answer_type) {
+      case 'number':
+        return (
+          <input
+            type="number"
+            inputMode="numeric"
+            value={infoStr(key)}
+            onChange={(e) => setInfo(key, 'number', e.target.value)}
+            placeholder={q.example ?? ''}
+            className={`w-32 text-right ${inputClass}`}
+          />
+        )
+      case 'yes_no':
+        return (
+          <select value={infoStr(key)} onChange={(e) => setInfo(key, 'yes_no', e.target.value)} className={`w-32 ${inputClass}`}>
+            <option value="">—</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        )
+      case 'select':
+        return (
+          <select value={infoStr(key)} onChange={(e) => setInfo(key, 'select', e.target.value)} className={`w-48 ${inputClass}`}>
+            <option value="">Select…</option>
+            {(q.options ?? []).map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
+        )
+      case 'date':
+        return (
+          <input type="date" value={infoStr(key)} onChange={(e) => setInfo(key, 'date', e.target.value)} className={`w-44 ${inputClass}`} />
+        )
+      default:
+        return (
+          <input
+            type="text"
+            value={infoStr(key)}
+            onChange={(e) => setInfo(key, 'text', e.target.value)}
+            placeholder={q.example ?? ''}
+            className={`w-56 ${inputClass}`}
+          />
+        )
+    }
+  }
+
+  function itemMeta(item: QSectionItem): { label: string; example: string; why: string; optional: boolean } {
+    if (item.kind === 'field' && item.field) {
+      const f = item.field
+      return { label: f.question_text?.trim() || f.label, example: f.example?.trim() ?? '', why: f.why_text?.trim() ?? '', optional: false }
+    }
+    if (item.kind === 'cm') {
+      return { label: 'Consent Manager tier', example: '', why: 'Pick the licensing tier for the Consent Manager module.', optional: false }
+    }
+    const q = item.info!
+    return { label: q.question_text?.trim() || q.question_key, example: q.example?.trim() ?? '', why: q.why_text?.trim() ?? '', optional: true }
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
@@ -183,43 +338,44 @@ export default function PublicCalculator({ token }: { token: string }) {
               Upload filled questionnaire
               <input type="file" accept=".xlsx" className="hidden" onChange={onUploadQuestionnaire} />
             </label>
-            <span className="text-xs text-slate-400">Or just fill the quantities below manually.</span>
+            <span className="text-xs text-slate-400">Or just answer the questions below.</span>
           </div>
           {uploadError && <p className="mt-2 text-xs text-red-600">{uploadError}</p>}
         </section>
       )}
 
-      {(visibleFields.length > 0 || tierSelected) && (
+      {selected.size > 0 && sections.length > 0 && (
         <section className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">2. Quantities</h2>
-          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-            {tierSelected && (
-              <label className="flex items-center justify-between gap-4">
-                <span className="text-sm text-slate-700">Consent Manager tier</span>
-                <select
-                  value={cmTier}
-                  onChange={(e) => { setResult(null); setCmTier(e.target.value) }}
-                  className="w-48 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-perfios-blue focus:outline-none"
-                >
-                  <option value="">Select a tier…</option>
-                  {form.cm_tiers.map((t) => (
-                    <option key={t.tier_key} value={t.tier_key}>{t.label}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {visibleFields.map((f) => (
-              <label key={f.field_key} className="flex items-center justify-between gap-4">
-                <span className="text-sm text-slate-700">{f.label}</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={quantities[f.field_key] ?? 0}
-                  onChange={(e) => setQuantity(f.field_key, e.target.value)}
-                  className="w-32 rounded-md border border-slate-300 px-3 py-2 text-right text-sm focus:border-perfios-blue focus:outline-none"
-                />
-              </label>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">2. Tell us about your needs</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Approximate / ballpark counts are fine — exact figures aren&apos;t needed. Questions marked “optional” never affect the price.
+          </p>
+          <div className="space-y-6">
+            {sections.map((section, si) => (
+              <div key={section.title} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-perfios-blue">
+                  {sectionLetter(si)}. {section.title}
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {section.items.map((item, ni) => {
+                    const meta = itemMeta(item)
+                    return (
+                      <div key={item.code} className="flex items-start justify-between gap-4 px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-700">
+                            <span className="font-medium text-slate-400">{`${sectionLetter(si)}.${ni + 1}`}</span>
+                            <span>{meta.label}</span>
+                            {meta.optional && <span className="text-xs font-normal text-slate-400">(optional)</span>}
+                            <WhyTip text={meta.why} />
+                          </div>
+                          {meta.example && <div className="mt-0.5 text-xs text-slate-400">e.g. {meta.example}</div>}
+                        </div>
+                        <div className="shrink-0">{renderInput(item)}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         </section>

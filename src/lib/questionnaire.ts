@@ -81,7 +81,7 @@ function questionText(text: string | null | undefined, label: string, example: s
 }
 
 /** A, B, …, Z, AA, AB … for section index 0, 1, 2 … */
-function sectionLetter(idx: number): string {
+export function sectionLetter(idx: number): string {
   let s = ''
   let n = idx + 1
   while (n > 0) {
@@ -96,16 +96,77 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-interface Item {
+/** A question row, neutral between the Excel sheet and the on-screen form. */
+export interface QSectionItem {
+  kind: 'field' | 'info' | 'cm'
+  /** field_key | info:<question_key> | __cm_tier__ */
   code: string
-  question: string
-  why: string
-  section: string
-  sectionSort: number
+  field?: PublicField
+  info?: PublicInformationalQuestion
   itemSort: number
-  /** Dropdown options for the answer cell, if any. */
-  validation?: string[]
-  prefill?: string | number | null
+}
+export interface QSection {
+  title: string
+  items: QSectionItem[]
+}
+
+/**
+ * The ordered, sectioned question list shared by the Excel generator AND the
+ * on-screen PublicCalculator, so the two can never drift. Sections are ordered by
+ * their (minimum) section_sort then name; items by item_sort. Priced fields are
+ * gated to the selected modules; informational questions (instance-wide context)
+ * always show; the CM tier sits in a trailing 'Consent Manager' section.
+ */
+export function orderedSections(form: PublicForm, moduleKeys: string[]): QSection[] {
+  interface Raw {
+    item: QSectionItem
+    section: string
+    sectionSort: number
+  }
+  const raw: Raw[] = []
+
+  for (const f of applicableFields(form, moduleKeys)) {
+    raw.push({
+      item: { kind: 'field', code: f.field_key, field: f, itemSort: f.item_sort ?? f.sort_order },
+      section: (f.section ?? '').trim() || DEFAULT_SECTION,
+      sectionSort: f.section_sort ?? 0,
+    })
+  }
+  for (const q of form.informational_questions ?? []) {
+    if (!q.active) continue
+    raw.push({
+      item: { kind: 'info', code: `${INFO_PREFIX}${q.question_key}`, info: q, itemSort: q.item_sort ?? 0 },
+      section: (q.section ?? '').trim() || DEFAULT_SECTION,
+      sectionSort: q.section_sort ?? 0,
+    })
+  }
+  if (tierSelected(form, moduleKeys) && form.cm_tiers.length > 0) {
+    raw.push({
+      item: { kind: 'cm', code: CM_TIER_CODE, itemSort: 0 },
+      section: CM_SECTION,
+      sectionSort: CM_SECTION_SORT,
+    })
+  }
+
+  // Section order: by the section's (minimum) sort, then name.
+  const sectionSort = new Map<string, number>()
+  for (const r of raw) {
+    const cur = sectionSort.get(r.section)
+    if (cur === undefined || r.sectionSort < cur) sectionSort.set(r.section, r.sectionSort)
+  }
+  const titles = [...sectionSort.keys()].sort((a, b) => {
+    const d = sectionSort.get(a)! - sectionSort.get(b)!
+    return d !== 0 ? d : a.localeCompare(b)
+  })
+
+  return titles.map((title) => ({
+    title,
+    items: raw
+      .map((r, i) => ({ r, i }))
+      .filter((x) => x.r.section === title)
+      .sort((a, b) => a.r.item.itemSort - b.r.item.itemSort || a.i - b.i)
+      .map((x) => x.r.item),
+  }))
 }
 
 function infoPrefill(q: PublicInformationalQuestion, val: InfoAnswer | undefined): string | number | null {
@@ -120,53 +181,36 @@ function infoPrefill(q: PublicInformationalQuestion, val: InfoAnswer | undefined
   return String(val)
 }
 
-function buildItems(form: PublicForm, moduleKeys: string[], opts: QuestionnaireOpts): Item[] {
-  const items: Item[] = []
-
-  for (const f of applicableFields(form, moduleKeys)) {
-    const pre = opts.quantities?.[f.field_key]
-    items.push({
-      code: f.field_key,
-      question: questionText(f.question_text, f.label, f.example),
-      why: (f.why_text ?? '').trim(),
-      section: (f.section ?? '').trim() || DEFAULT_SECTION,
-      sectionSort: f.section_sort ?? 0,
-      itemSort: f.item_sort ?? f.sort_order,
-      prefill: pre === undefined || pre === null ? null : pre,
-    })
+/** Question text with the example folded inline, for an item of any kind. */
+function itemQuestion(item: QSectionItem): string {
+  if (item.field) return questionText(item.field.question_text, item.field.label, item.field.example)
+  if (item.info) return questionText(item.info.question_text, item.info.question_key, item.info.example)
+  return 'Consent Manager tier'
+}
+function itemWhy(item: QSectionItem): string {
+  if (item.field) return (item.field.why_text ?? '').trim()
+  if (item.info) return (item.info.why_text ?? '').trim()
+  return 'Select the licensing tier for the Consent Manager module.'
+}
+/** Answer-cell dropdown options, if any. */
+function itemValidation(item: QSectionItem, form: PublicForm): string[] | undefined {
+  if (item.kind === 'cm') return form.cm_tiers.map((t) => t.label)
+  if (item.info?.answer_type === 'yes_no') return ['Yes', 'No']
+  if (item.info?.answer_type === 'select') return item.info.options ?? undefined
+  return undefined
+}
+function itemPrefill(item: QSectionItem, form: PublicForm, opts: QuestionnaireOpts): string | number | null {
+  if (item.kind === 'field') {
+    const v = opts.quantities?.[item.code]
+    return v === undefined || v === null ? null : v
   }
-
-  for (const q of form.informational_questions ?? []) {
-    if (!q.active) continue
-    const validation =
-      q.answer_type === 'yes_no' ? ['Yes', 'No'] : q.answer_type === 'select' ? q.options ?? [] : undefined
-    items.push({
-      code: `${INFO_PREFIX}${q.question_key}`,
-      question: questionText(q.question_text, q.question_key, q.example),
-      why: (q.why_text ?? '').trim(),
-      section: (q.section ?? '').trim() || DEFAULT_SECTION,
-      sectionSort: q.section_sort ?? 0,
-      itemSort: q.item_sort ?? 0,
-      validation: validation && validation.length ? validation : undefined,
-      prefill: infoPrefill(q, opts.informationalAnswers?.[q.question_key]),
-    })
+  if (item.kind === 'info' && item.info) {
+    return infoPrefill(item.info, opts.informationalAnswers?.[item.info.question_key])
   }
-
-  if (tierSelected(form, moduleKeys) && form.cm_tiers.length > 0) {
-    const label = opts.cmTier ? form.cm_tiers.find((t) => t.tier_key === opts.cmTier)?.label ?? null : null
-    items.push({
-      code: CM_TIER_CODE,
-      question: 'Consent Manager tier',
-      why: 'Select the licensing tier for the Consent Manager module.',
-      section: CM_SECTION,
-      sectionSort: CM_SECTION_SORT,
-      itemSort: 0,
-      validation: form.cm_tiers.map((t) => t.label),
-      prefill: label,
-    })
+  if (item.kind === 'cm') {
+    return opts.cmTier ? form.cm_tiers.find((t) => t.tier_key === opts.cmTier)?.label ?? null : null
   }
-
-  return items
+  return null
 }
 
 export function buildQuestionnaireWorkbook(
@@ -213,54 +257,38 @@ export function buildQuestionnaireWorkbook(
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C58A7' } }
   })
 
-  // --- Sectioned question rows ---------------------------------------------
-  const items = buildItems(form, moduleKeys, opts)
-
-  // Section order: by the section's sort (min across its items), then name.
-  const sectionSort = new Map<string, number>()
-  for (const it of items) {
-    const cur = sectionSort.get(it.section)
-    if (cur === undefined || it.sectionSort < cur) sectionSort.set(it.section, it.sectionSort)
-  }
-  const sections = [...sectionSort.keys()].sort((a, b) => {
-    const d = sectionSort.get(a)! - sectionSort.get(b)!
-    return d !== 0 ? d : a.localeCompare(b)
-  })
-
+  // --- Sectioned question rows (shared ordering with the on-screen form) ----
   const answerBorder = { bottom: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } } }
   let r = HEADER_ROW + 1
 
-  sections.forEach((section, si) => {
+  orderedSections(form, moduleKeys).forEach((section, si) => {
     const letter = sectionLetter(si)
     const headRow = ws.getRow(r)
     ws.mergeCells(r, QUESTION_COL, r, WHY_COL)
     const hc = headRow.getCell(QUESTION_COL)
-    hc.value = `${letter}. ${section}`
+    hc.value = `${letter}. ${section.title}`
     hc.font = { bold: true, color: { argb: 'FF1C58A7' } }
     hc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF3FB' } }
     headRow.getCell(NUM_COL).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF3FB' } }
     r += 1
 
-    const rows = items
-      .map((it, i) => ({ it, i }))
-      .filter((x) => x.it.section === section)
-      .sort((a, b) => (a.it.itemSort - b.it.itemSort) || (a.i - b.i))
-
-    rows.forEach(({ it }, ni) => {
+    section.items.forEach((item, ni) => {
+      const validation = itemValidation(item, form)
+      const prefill = itemPrefill(item, form, opts)
       const row = ws.getRow(r)
-      row.getCell(CODE_COL).value = it.code
+      row.getCell(CODE_COL).value = item.code
       row.getCell(NUM_COL).value = `${letter}.${ni + 1}`
       const qc = row.getCell(QUESTION_COL)
-      qc.value = it.question
+      qc.value = itemQuestion(item)
       qc.alignment = { wrapText: true, vertical: 'top' }
       const ans = row.getCell(ANSWER_COL)
-      ans.value = it.prefill ?? null
-      if (it.validation && it.validation.length) {
-        ans.dataValidation = { type: 'list', allowBlank: true, formulae: [`"${it.validation.join(',')}"`] }
+      ans.value = prefill ?? null
+      if (validation && validation.length) {
+        ans.dataValidation = { type: 'list', allowBlank: true, formulae: [`"${validation.join(',')}"`] }
       }
       ans.border = answerBorder
       const wc = row.getCell(WHY_COL)
-      wc.value = it.why
+      wc.value = itemWhy(item)
       wc.font = { size: 10, color: { argb: 'FF64748B' } }
       wc.alignment = { wrapText: true, vertical: 'top' }
       r += 1

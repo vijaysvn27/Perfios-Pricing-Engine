@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as ExcelJS from 'exceljs'
-import { buildQuestionnaireWorkbook, parseQuestionnaireBuffer, CM_TIER_CODE } from './questionnaire'
+import { buildQuestionnaireWorkbook, parseQuestionnaireBuffer, orderedSections, CM_TIER_CODE } from './questionnaire'
 import type { PublicForm } from './publicApi'
 
 const form: PublicForm = {
@@ -130,6 +130,23 @@ describe('questionnaire round-trip', () => {
     const buf = await wb.xlsx.writeBuffer()
     const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
     expect(parsed.quantities.bogus_field).toBeUndefined()
+  })
+
+  it('orderedSections: shared on-screen/Excel grouping (section_sort then item_sort, CM trailing)', () => {
+    const secs = orderedSections(form, ['DSPM', 'CM'])
+    expect(secs.map((s) => s.title)).toEqual(['About you', 'Data sources', 'Consent Manager'])
+    expect(secs[0].items.map((i) => i.code)).toEqual(['info:employees', 'info:has_dpo'])
+    expect(secs[0].items.map((i) => i.kind)).toEqual(['info', 'info'])
+    expect(secs[1].items.map((i) => i.code)).toEqual(['db', 'gdrive_user'])
+    expect(secs[1].items.map((i) => i.kind)).toEqual(['field', 'field'])
+    expect(secs[2].items.map((i) => i.kind)).toEqual(['cm'])
+
+    // Without a tier module there is no Consent Manager section; informational stays.
+    const noCm = orderedSections(form, ['DSPM'])
+    expect(noCm.find((s) => s.title === 'Consent Manager')).toBeUndefined()
+    expect(noCm.find((s) => s.title === 'About you')).toBeDefined()
+    // Inactive informational questions are excluded.
+    expect(noCm.flatMap((s) => s.items.map((i) => i.code))).not.toContain('info:inactive_q')
   })
 
   it('rejects a file that is not a Perfios questionnaire', async () => {
