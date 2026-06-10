@@ -135,10 +135,11 @@ export default function PublicCalculator({ token }: { token: string }) {
 
   function onGenerateQuestionnaire() {
     if (!form || !customerName.trim()) return
+    // The CM tier is a partner-only choice in the calculator — it is NOT written to
+    // the customer questionnaire.
     void generateQuestionnaireXlsx(form, [...selected], {
       customerName,
       quantities,
-      cmTier: tierSelected ? cmTier || null : null,
       informationalAnswers: infoAnswers,
     })
     // Best-effort: every questionnaire download is linked to a customer.
@@ -167,9 +168,9 @@ export default function PublicCalculator({ token }: { token: string }) {
       const parsed = await parseQuestionnaireBuffer(buf, form)
       setSelected(new Set(parsed.moduleKeys))
       setQuantities(parsed.quantities)
-      setCmTier(parsed.cmTier ?? '')
       setInfoAnswers(parsed.informationalAnswers)
       if (parsed.customerName) setCustomerName(parsed.customerName)
+      // CM tier is NOT in the file (partner-only) — leave the partner's selection as is.
       setResult(null)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : String(err))
@@ -235,25 +236,6 @@ export default function PublicCalculator({ token }: { token: string }) {
         />
       )
     }
-    if (item.kind === 'cm') {
-      return (
-        <select
-          value={cmTier}
-          onChange={(e) => {
-            setResult(null)
-            setCmTier(e.target.value)
-          }}
-          className={`w-48 ${inputClass}`}
-        >
-          <option value="">Select a tier…</option>
-          {form!.cm_tiers.map((t) => (
-            <option key={t.tier_key} value={t.tier_key}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      )
-    }
     const q = item.info!
     const key = q.question_key
     switch (q.answer_type) {
@@ -308,9 +290,6 @@ export default function PublicCalculator({ token }: { token: string }) {
     if (item.kind === 'field' && item.field) {
       const f = item.field
       return { label: f.question_text?.trim() || f.label, example: f.example?.trim() ?? '', why: f.why_text?.trim() ?? '', optional: false }
-    }
-    if (item.kind === 'cm') {
-      return { label: 'Consent Manager tier', example: '', why: 'Pick the licensing tier for the Consent Manager module.', optional: false }
     }
     const q = item.info!
     return { label: q.question_text?.trim() || q.question_key, example: q.example?.trim() ?? '', why: q.why_text?.trim() ?? '', optional: true }
@@ -414,6 +393,31 @@ export default function PublicCalculator({ token }: { token: string }) {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {tierSelected && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Consent Manager tier · partner selection</h2>
+          <div className="rounded-lg border border-perfios-blue/30 bg-perfios-blue/5 p-4">
+            <label className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-medium text-slate-700">Tier</span>
+              <select
+                value={cmTier}
+                onChange={(e) => { setResult(null); setCmTier(e.target.value) }}
+                className={`w-56 ${inputClass}`}
+              >
+                <option value="">Select a tier…</option>
+                {form.cm_tiers.map((t) => (
+                  <option key={t.tier_key} value={t.tier_key}>{t.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              Commercial choice — <strong>not shown to the customer</strong> and not part of the questionnaire. It drives the
+              Consent Manager price. Use the “Consent Manager” questions above for sizing context.
+            </p>
           </div>
         </section>
       )}

@@ -4,19 +4,23 @@
 // price-stripped public form.
 //
 // Layout (rows 1-4 = header block, row 5 = table header, row 6+ = questions):
-//   col 1  Field Code   (HIDDEN — field_key | info:<key> | __cm_tier__ | empty)
+//   col 1  Field Code   (HIDDEN — field_key | info:<key> | empty)
 //   col 2  #            (per-section number A.1, A.2 …)
 //   col 3  Question     (question_text with inline example)
 //   col 4  Response     (the answer cell — the only cell users edit)
 //   col 5  Why this is needed
 // Questions are grouped into SECTIONS (lettered A, B, …) ordered by section_sort
 // then item_sort. Section header rows carry no code, so the parser ignores them —
-// as it ignores informational rows. Pricing consumes ONLY quantities + cmTier.
+// as it ignores informational rows. Pricing consumes ONLY priced quantities; the CM
+// tier is a partner-only commercial choice picked in the calculator, NOT a customer
+// question — it never appears on this file (legacy tier rows are ignored on parse).
 
 import * as ExcelJS from 'exceljs'
 import type { PublicField, PublicForm, PublicInformationalQuestion } from './publicApi'
 
 export const QUESTIONNAIRE_MARKER = 'PERFIOS_QUESTIONNAIRE_V1'
+/** Legacy code for the CM tier row. No longer emitted (tier is calculator-only); kept
+ *  so the parser can recognise and ignore it in older files. */
 export const CM_TIER_CODE = '__cm_tier__'
 const INFO_PREFIX = 'info:'
 const META_SHEET = '_perfios_meta'
@@ -31,9 +35,6 @@ const HEADER_ROW = 5
 const CUSTOMER_CELL = 'C2'
 const DATE_CELL = 'E2'
 
-// CM tier lives in its own trailing section regardless of how fields are sectioned.
-const CM_SECTION = 'Consent Manager'
-const CM_SECTION_SORT = 1_000_000
 const DEFAULT_SECTION = 'General'
 
 export type InfoAnswer = string | number | boolean
@@ -42,7 +43,6 @@ export interface ParsedQuestionnaire {
   moduleKeys: string[]
   /** Priced quantities ONLY (field_key -> integer). Pricing reads these. */
   quantities: Record<string, number>
-  cmTier: string | null
   /** Informational (non-priced) answers. STORED ONLY — never affect pricing. */
   informationalAnswers: Record<string, InfoAnswer>
   customerName: string
@@ -52,8 +52,6 @@ export interface QuestionnaireOpts {
   customerName?: string
   /** Optional pre-fill (e.g. re-download after the user typed values on screen). */
   quantities?: Record<string, number>
-  /** tier_key to pre-select. */
-  cmTier?: string | null
   informationalAnswers?: Record<string, InfoAnswer>
 }
 
@@ -66,11 +64,6 @@ function applicableFields(form: PublicForm, moduleKeys: string[]): PublicField[]
     if (sel.has(tag.module_key) && byKey.has(tag.field_key)) keys.add(tag.field_key)
   }
   return [...keys].map((k) => byKey.get(k)!).filter((f) => f.active).sort((a, b) => a.sort_order - b.sort_order)
-}
-
-function tierSelected(form: PublicForm, moduleKeys: string[]): boolean {
-  const sel = new Set(moduleKeys)
-  return form.modules.some((m) => sel.has(m.module_key) && m.pricing_type === 'tier')
 }
 
 /** Question text with the example folded in inline. */
@@ -98,8 +91,8 @@ function isoDate(d: Date): string {
 
 /** A question row, neutral between the Excel sheet and the on-screen form. */
 export interface QSectionItem {
-  kind: 'field' | 'info' | 'cm'
-  /** field_key | info:<question_key> | __cm_tier__ */
+  kind: 'field' | 'info'
+  /** field_key | info:<question_key> */
   code: string
   field?: PublicField
   info?: PublicInformationalQuestion
@@ -115,7 +108,7 @@ export interface QSection {
  * on-screen PublicCalculator, so the two can never drift. Sections are ordered by
  * their (minimum) section_sort then name; items by item_sort. Priced fields are
  * gated to the selected modules; informational questions (instance-wide context)
- * always show; the CM tier sits in a trailing 'Consent Manager' section.
+ * always show. The CM tier is NOT here — it is a partner-only choice in the calculator.
  */
 export function orderedSections(form: PublicForm, moduleKeys: string[]): QSection[] {
   interface Raw {
@@ -138,13 +131,6 @@ export function orderedSections(form: PublicForm, moduleKeys: string[]): QSectio
       item: { kind: 'info', code: `${INFO_PREFIX}${q.question_key}`, info: q, itemSort: q.item_sort ?? 0 },
       section: (q.section ?? '').trim() || DEFAULT_SECTION,
       sectionSort: q.section_sort ?? 0,
-    })
-  }
-  if (tierSelected(form, moduleKeys) && form.cm_tiers.length > 0) {
-    raw.push({
-      item: { kind: 'cm', code: CM_TIER_CODE, itemSort: 0 },
-      section: CM_SECTION,
-      sectionSort: CM_SECTION_SORT,
     })
   }
 
@@ -181,36 +167,27 @@ function infoPrefill(q: PublicInformationalQuestion, val: InfoAnswer | undefined
   return String(val)
 }
 
-/** Question text with the example folded inline, for an item of any kind. */
+/** Question text with the example folded inline. */
 function itemQuestion(item: QSectionItem): string {
   if (item.field) return questionText(item.field.question_text, item.field.label, item.field.example)
-  if (item.info) return questionText(item.info.question_text, item.info.question_key, item.info.example)
-  return 'Consent Manager tier'
+  return questionText(item.info!.question_text, item.info!.question_key, item.info!.example)
 }
 function itemWhy(item: QSectionItem): string {
   if (item.field) return (item.field.why_text ?? '').trim()
-  if (item.info) return (item.info.why_text ?? '').trim()
-  return 'Select the licensing tier for the Consent Manager module.'
+  return (item.info!.why_text ?? '').trim()
 }
-/** Answer-cell dropdown options, if any. */
-function itemValidation(item: QSectionItem, form: PublicForm): string[] | undefined {
-  if (item.kind === 'cm') return form.cm_tiers.map((t) => t.label)
+/** Answer-cell dropdown options, if any (informational yes_no / select). */
+function itemValidation(item: QSectionItem): string[] | undefined {
   if (item.info?.answer_type === 'yes_no') return ['Yes', 'No']
   if (item.info?.answer_type === 'select') return item.info.options ?? undefined
   return undefined
 }
-function itemPrefill(item: QSectionItem, form: PublicForm, opts: QuestionnaireOpts): string | number | null {
+function itemPrefill(item: QSectionItem, opts: QuestionnaireOpts): string | number | null {
   if (item.kind === 'field') {
     const v = opts.quantities?.[item.code]
     return v === undefined || v === null ? null : v
   }
-  if (item.kind === 'info' && item.info) {
-    return infoPrefill(item.info, opts.informationalAnswers?.[item.info.question_key])
-  }
-  if (item.kind === 'cm') {
-    return opts.cmTier ? form.cm_tiers.find((t) => t.tier_key === opts.cmTier)?.label ?? null : null
-  }
-  return null
+  return infoPrefill(item.info!, opts.informationalAnswers?.[item.info!.question_key])
 }
 
 export function buildQuestionnaireWorkbook(
@@ -273,8 +250,8 @@ export function buildQuestionnaireWorkbook(
     r += 1
 
     section.items.forEach((item, ni) => {
-      const validation = itemValidation(item, form)
-      const prefill = itemPrefill(item, form, opts)
+      const validation = itemValidation(item)
+      const prefill = itemPrefill(item, opts)
       const row = ws.getRow(r)
       row.getCell(CODE_COL).value = item.code
       row.getCell(NUM_COL).value = `${letter}.${ni + 1}`
@@ -360,12 +337,10 @@ export async function parseQuestionnaireBuffer(buffer: ArrayBuffer, form: Public
     .filter((k) => k && knownModules.has(k))
 
   const knownFields = new Set(form.fields.map((f) => f.field_key))
-  const tierByLabel = new Map(form.cm_tiers.map((t) => [t.label, t.tier_key]))
   const infoByKey = new Map((form.informational_questions ?? []).map((q) => [q.question_key, q]))
 
   const quantities: Record<string, number> = {}
   const informationalAnswers: Record<string, InfoAnswer> = {}
-  let cmTier: string | null = null
   let customerName = ''
 
   const ws = wb.getWorksheet(QUESTION_SHEET) ?? wb.worksheets.find((w) => w.name !== META_SHEET)
@@ -374,12 +349,9 @@ export async function parseQuestionnaireBuffer(buffer: ArrayBuffer, form: Public
     ws.eachRow((row) => {
       const code = String(row.getCell(CODE_COL).value ?? '').trim()
       if (!code || code === 'Field Code') return // section headers / table header
+      if (code === CM_TIER_CODE) return // legacy tier row — tier is partner-only now
       const raw = cellValue(row.getCell(ANSWER_COL).value)
 
-      if (code === CM_TIER_CODE) {
-        cmTier = tierByLabel.get(String(raw ?? '').trim()) ?? null
-        return
-      }
       if (code.startsWith(INFO_PREFIX)) {
         const key = code.slice(INFO_PREFIX.length)
         const v = coerceInfo(infoByKey.get(key), raw)
@@ -393,5 +365,5 @@ export async function parseQuestionnaireBuffer(buffer: ArrayBuffer, form: Public
     })
   }
 
-  return { moduleKeys, quantities, cmTier, informationalAnswers, customerName }
+  return { moduleKeys, quantities, informationalAnswers, customerName }
 }

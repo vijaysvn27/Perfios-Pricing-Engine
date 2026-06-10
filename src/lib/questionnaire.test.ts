@@ -52,20 +52,43 @@ function codes(ws: ExcelJS.Worksheet): string[] {
 }
 
 describe('questionnaire round-trip', () => {
-  it('restores module selection, priced quantities, CM tier, and customer name', async () => {
+  it('restores module selection, priced quantities, and customer name', async () => {
     const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], { customerName: 'Acme Bank' })
     const ws = wb.getWorksheet('Questionnaire')!
     setAnswer(ws, 'db', 3)
     setAnswer(ws, 'gdrive_user', 25)
-    setAnswer(ws, CM_TIER_CODE, 'Mid')
 
     const buf = await wb.xlsx.writeBuffer()
     const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
 
     expect(parsed.moduleKeys.slice().sort()).toEqual(['CM', 'DSPM'])
     expect(parsed.quantities).toEqual({ db: 3, gdrive_user: 25 })
-    expect(parsed.cmTier).toBe('mid')
     expect(parsed.customerName).toBe('Acme Bank')
+  })
+
+  it('CM tier is NOT written to the questionnaire (partner-only choice)', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], { customerName: 'Acme Bank' })
+    const ws = wb.getWorksheet('Questionnaire')!
+    expect(codes(ws)).not.toContain(CM_TIER_CODE)
+    // No "Consent Manager" section header either.
+    let sawCm = false
+    ws.eachRow((r) => {
+      if (!String(r.getCell(1).value ?? '') && /Consent Manager/.test(String(r.getCell(3).value ?? ''))) sawCm = true
+    })
+    expect(sawCm).toBe(false)
+  })
+
+  it('parser ignores a legacy __cm_tier__ row from an older file', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM'], {})
+    const ws = wb.getWorksheet('Questionnaire')!
+    setAnswer(ws, 'db', 4)
+    const last = ws.rowCount + 1
+    ws.getRow(last).getCell(1).value = CM_TIER_CODE
+    ws.getRow(last).getCell(ANSWER_COL).value = 'Large'
+    const buf = await wb.xlsx.writeBuffer()
+    const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
+    expect(parsed.quantities).toEqual({ db: 4 })
+    expect((parsed as Record<string, unknown>).cmTier).toBeUndefined()
   })
 
   it('captures informational answers separately and NEVER in quantities', async () => {
@@ -132,20 +155,20 @@ describe('questionnaire round-trip', () => {
     expect(parsed.quantities.bogus_field).toBeUndefined()
   })
 
-  it('orderedSections: shared on-screen/Excel grouping (section_sort then item_sort, CM trailing)', () => {
+  it('orderedSections: shared on-screen/Excel grouping (section_sort then item_sort); no CM tier item', () => {
     const secs = orderedSections(form, ['DSPM', 'CM'])
-    expect(secs.map((s) => s.title)).toEqual(['About you', 'Data sources', 'Consent Manager'])
+    // Only field + informational sections — the CM tier is never an item here.
+    expect(secs.map((s) => s.title)).toEqual(['About you', 'Data sources'])
     expect(secs[0].items.map((i) => i.code)).toEqual(['info:employees', 'info:has_dpo'])
     expect(secs[0].items.map((i) => i.kind)).toEqual(['info', 'info'])
     expect(secs[1].items.map((i) => i.code)).toEqual(['db', 'gdrive_user'])
     expect(secs[1].items.map((i) => i.kind)).toEqual(['field', 'field'])
-    expect(secs[2].items.map((i) => i.kind)).toEqual(['cm'])
+    expect(secs.flatMap((s) => s.items.map((i) => i.kind))).not.toContain('cm')
+    expect(secs.find((s) => s.title === 'Consent Manager')).toBeUndefined()
 
-    // Without a tier module there is no Consent Manager section; informational stays.
-    const noCm = orderedSections(form, ['DSPM'])
-    expect(noCm.find((s) => s.title === 'Consent Manager')).toBeUndefined()
-    expect(noCm.find((s) => s.title === 'About you')).toBeDefined()
     // Inactive informational questions are excluded.
+    const noCm = orderedSections(form, ['DSPM'])
+    expect(noCm.find((s) => s.title === 'About you')).toBeDefined()
     expect(noCm.flatMap((s) => s.items.map((i) => i.code))).not.toContain('info:inactive_q')
   })
 
@@ -156,17 +179,15 @@ describe('questionnaire round-trip', () => {
     await expect(parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)).rejects.toThrow(/not a Perfios questionnaire/)
   })
 
-  it('round-trips pre-filled values (quantities, CM tier, informational)', async () => {
+  it('round-trips pre-filled values (quantities, informational, customer)', async () => {
     const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], {
       customerName: 'Prefill Co',
       quantities: { db: 12 },
-      cmTier: 'large',
       informationalAnswers: { employees: 42, has_dpo: false },
     })
     const buf = await wb.xlsx.writeBuffer()
     const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
     expect(parsed.quantities).toEqual({ db: 12 })
-    expect(parsed.cmTier).toBe('large')
     expect(parsed.customerName).toBe('Prefill Co')
     expect(parsed.informationalAnswers).toEqual({ employees: 42, has_dpo: false })
   })
