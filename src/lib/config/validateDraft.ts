@@ -76,5 +76,24 @@ export function validateDraft(d: DraftState): ValidationError[] {
     }
   }
 
+  // Informational questions (context only): unique non-empty key, has text,
+  // select has options. These never affect price.
+  const seenInfo = new Set<string>()
+  for (const q of d.informational_questions) {
+    if (!q.question_key) {
+      errs.push({ code: 'info_key_empty', message: 'An informational question has an empty key.', entityType: 'informational', entityKey: q.question_key })
+    }
+    if (seenInfo.has(q.question_key)) {
+      errs.push({ code: 'info_key_dup', message: `Duplicate informational question key "${q.question_key}".`, entityType: 'informational', entityKey: q.question_key })
+    }
+    seenInfo.add(q.question_key)
+    if (!q.question_text || !q.question_text.trim()) {
+      errs.push({ code: 'info_text_empty', message: `Informational question "${q.question_key}" needs question text.`, entityType: 'informational', entityKey: q.question_key })
+    }
+    if (q.answer_type === 'select' && (!q.options || q.options.length === 0)) {
+      errs.push({ code: 'info_no_options', message: `Informational question "${q.question_key}" (select) needs at least one option.`, entityType: 'informational', entityKey: q.question_key })
+    }
+  }
+
   return errs
 }

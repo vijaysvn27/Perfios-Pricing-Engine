@@ -10,6 +10,7 @@ const draftFromSeed = (): DraftState => ({
   module_fields: seedSnapshot.module_fields,
   cm_tiers: seedSnapshot.cm_tiers,
   settings: seedSnapshot.settings,
+  informational_questions: [],
 })
 
 // Order-insensitive canonicalisation so parity compares CONTENT, not array order.

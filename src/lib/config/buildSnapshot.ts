@@ -23,5 +23,9 @@ export function buildSnapshot(draft: DraftState): ConfigSnapshot {
 
   const cm_tiers = [...draft.cm_tiers].sort((a, b) => a.license_fee_inr - b.license_fee_inr)
 
-  return { fields, modules, module_fields, cm_tiers, settings: draft.settings }
+  const informational_questions = [...draft.informational_questions].sort(
+    (a, b) => a.section_sort - b.section_sort || a.item_sort - b.item_sort || a.question_key.localeCompare(b.question_key),
+  )
+
+  return { fields, modules, module_fields, cm_tiers, settings: draft.settings, informational_questions }
 }

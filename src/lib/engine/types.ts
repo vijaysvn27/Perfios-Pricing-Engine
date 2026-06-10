@@ -23,6 +23,34 @@ export interface FieldDef {
   frequency: Frequency
   active: boolean
   sort_order: number
+  // Questionnaire help (Stage 5). The ENGINE IGNORES these. Optional so fixtures
+  // and the engine math stay unchanged.
+  question_text?: string | null
+  example?: string | null
+  why_text?: string | null
+  section?: string | null
+  section_sort?: number
+  item_sort?: number
+}
+
+/** Answer type for an informational (non-priced) question. */
+export type InfoAnswerType = 'number' | 'yes_no' | 'text' | 'date' | 'select'
+
+/**
+ * An informational (non-priced) question. CONTEXT ONLY — the engine NEVER reads
+ * these and they must never affect price. Anything price-affecting must be a field.
+ */
+export interface InformationalQuestion {
+  question_key: string
+  question_text: string
+  example?: string | null
+  why_text?: string | null
+  answer_type: InfoAnswerType
+  options?: string[] | null
+  section?: string | null
+  section_sort: number
+  item_sort: number
+  active: boolean
 }
 
 /**
@@ -85,6 +113,8 @@ export interface ConfigSnapshot {
   module_fields: ModuleFieldTag[]
   cm_tiers: CmTier[]
   settings: Settings
+  /** Stage 5 non-priced context questions. Engine ignores. Optional for fixtures. */
+  informational_questions?: InformationalQuestion[]
 }
 
 export interface Selections {

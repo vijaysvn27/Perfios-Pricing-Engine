@@ -1,19 +1,23 @@
 import { supabase } from '../supabase'
-import type { CmTier, FieldDef, ModuleDef, ModuleFieldTag, Settings } from '../engine'
+import type { CmTier, FieldDef, InformationalQuestion, ModuleDef, ModuleFieldTag, Settings } from '../engine'
 import type { DraftState } from './types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** Read one instance's draft working set (the five normalized tables) into memory. */
+const FIELD_COLS = 'field_key,label,unit_price_inr,frequency,active,sort_order,question_text,example,why_text,section,section_sort,item_sort'
+const INFO_COLS = 'question_key,question_text,example,why_text,answer_type,options,section,section_sort,item_sort,active'
+
+/** Read one instance's draft working set into memory. */
 export async function loadDraft(instanceId: string): Promise<DraftState> {
-  const [fields, modules, mf, tiers, settings] = await Promise.all([
-    supabase.from('fields').select('field_key,label,unit_price_inr,frequency,active,sort_order').eq('instance_id', instanceId),
+  const [fields, modules, mf, tiers, settings, info] = await Promise.all([
+    supabase.from('fields').select(FIELD_COLS).eq('instance_id', instanceId),
     supabase.from('modules').select('module_key,label,kind,pricing_type,deployment_pct,amc_pct,multiplier,applies_multiplier,active').eq('instance_id', instanceId),
     supabase.from('module_fields').select('modules(module_key),fields(field_key)').eq('instance_id', instanceId),
     supabase.from('cm_tiers').select('tier_key,label,license_fee_inr,amc_pct,implementation_fee_inr').eq('instance_id', instanceId),
     supabase.from('settings').select('currency,deployment_pct,amc_pct,y2_includes_deployment,cm_model,rounding,excel_hero,excel_terms').eq('instance_id', instanceId).single(),
+    supabase.from('informational_questions').select(INFO_COLS).eq('instance_id', instanceId),
   ])
-  const err = fields.error || modules.error || mf.error || tiers.error || settings.error
+  const err = fields.error || modules.error || mf.error || tiers.error || settings.error || info.error
   if (err) throw new Error(`loadDraft failed: ${err.message}`)
 
   const module_fields: ModuleFieldTag[] = (mf.data ?? []).map((r: any) => {
@@ -28,7 +32,18 @@ export async function loadDraft(instanceId: string): Promise<DraftState> {
     module_fields,
     cm_tiers: (tiers.data ?? []) as CmTier[],
     settings: settings.data as Settings,
+    informational_questions: (info.data ?? []) as InformationalQuestion[],
   }
+}
+
+export async function upsertInformationalQuestion(instanceId: string, q: InformationalQuestion): Promise<void> {
+  const { error } = await supabase.from('informational_questions').upsert({ ...q, instance_id: instanceId }, { onConflict: 'instance_id,question_key' })
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteInformationalQuestion(instanceId: string, questionKey: string): Promise<void> {
+  const { error } = await supabase.from('informational_questions').delete().eq('instance_id', instanceId).eq('question_key', questionKey)
+  if (error) throw new Error(error.message)
 }
 
 export async function upsertField(instanceId: string, f: FieldDef): Promise<void> {

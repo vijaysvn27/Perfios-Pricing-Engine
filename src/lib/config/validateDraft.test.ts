@@ -9,6 +9,7 @@ const base = (): DraftState => ({
   module_fields: structuredClone(seedSnapshot.module_fields),
   cm_tiers: structuredClone(seedSnapshot.cm_tiers),
   settings: structuredClone(seedSnapshot.settings),
+  informational_questions: [],
 })
 
 const codes = (d: DraftState) => validateDraft(d).map((e) => e.code)

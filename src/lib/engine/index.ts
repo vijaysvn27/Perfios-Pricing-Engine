@@ -9,6 +9,8 @@ export type {
   EngineResult,
   FieldDef,
   Frequency,
+  InfoAnswerType,
+  InformationalQuestion,
   LineItem,
   ModuleDef,
   ModuleFieldTag,
