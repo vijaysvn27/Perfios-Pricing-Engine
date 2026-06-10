@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CmTier, FieldDef, ModuleDef, Settings } from '../lib/engine'
+import type { CmTier, FieldDef, InformationalQuestion, ModuleDef, Settings } from '../lib/engine'
 import type { DraftState } from '../lib/config/types'
 import {
+  deleteInformationalQuestion,
   loadDraft,
   saveSettings,
   setFieldTag,
   upsertField,
+  upsertInformationalQuestion,
   upsertModule,
   upsertTier,
 } from '../lib/config/draftRepo'
@@ -109,6 +111,23 @@ export function useDraft(instanceId: string | null) {
     if (instanceId) void run(() => setFieldTag(instanceId, moduleKey, fieldKey, on))
   }, [run, instanceId])
 
+  // ---- informational questions ----
+  const patchInfo = useCallback((key: string, patch: Partial<InformationalQuestion>) => {
+    setDraft((d) => (d ? { ...d, informational_questions: d.informational_questions.map((q) => (q.question_key === key ? { ...q, ...patch } : q)) } : d))
+  }, [])
+  const commitInfo = useCallback((key: string) => {
+    const q = draftRef.current?.informational_questions.find((x) => x.question_key === key)
+    if (q && instanceId) void run(() => upsertInformationalQuestion(instanceId, q))
+  }, [run, instanceId])
+  const addInfo = useCallback((q: InformationalQuestion) => {
+    setDraft((d) => (d ? { ...d, informational_questions: [...d.informational_questions, q] } : d))
+    if (instanceId) void run(() => upsertInformationalQuestion(instanceId, q))
+  }, [run, instanceId])
+  const deleteInfo = useCallback((key: string) => {
+    setDraft((d) => (d ? { ...d, informational_questions: d.informational_questions.filter((x) => x.question_key !== key) } : d))
+    if (instanceId) void run(() => deleteInformationalQuestion(instanceId, key))
+  }, [run, instanceId])
+
   const reset = useCallback(async () => {
     if (!instanceId) return
     await run(() => resetDraftToLive(instanceId))
@@ -132,6 +151,10 @@ export function useDraft(instanceId: string | null) {
     addField,
     addTier,
     toggleTag,
+    patchInfo,
+    commitInfo,
+    addInfo,
+    deleteInfo,
     reset,
   }
 }

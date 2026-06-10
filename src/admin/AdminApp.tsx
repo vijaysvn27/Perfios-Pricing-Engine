@@ -6,6 +6,7 @@ import { useDraft } from './useDraft'
 import FieldsEditor from './FieldsEditor'
 import ModulesEditor from './ModulesEditor'
 import CmTiersEditor from './CmTiersEditor'
+import QuestionsEditor from './QuestionsEditor'
 import SettingsEditor from './SettingsEditor'
 import VersionHistory from './VersionHistory'
 import PreviewPanel from './PreviewPanel'
@@ -13,13 +14,14 @@ import ValidationPanel from './ValidationPanel'
 import InstancesManager from './InstancesManager'
 import { btn, card, inp } from './styles'
 
-type Tab = 'instances' | 'fields' | 'modules' | 'cm' | 'settings' | 'versions'
+type Tab = 'instances' | 'fields' | 'modules' | 'cm' | 'questions' | 'settings' | 'versions'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'instances', label: 'Instances' },
   { id: 'fields', label: 'Fields' },
   { id: 'modules', label: 'Modules' },
   { id: 'cm', label: 'CM Tiers' },
+  { id: 'questions', label: 'Questions' },
   { id: 'settings', label: 'Settings' },
   { id: 'versions', label: 'Versions' },
 ]
@@ -127,6 +129,18 @@ export default function AdminApp() {
             )}
             {tab === 'cm' && (
               <CmTiersEditor cm_tiers={d.draft.cm_tiers} patchTier={d.patchTier} commitTier={d.commitTier} addTier={d.addTier} />
+            )}
+            {tab === 'questions' && (
+              <QuestionsEditor
+                fields={d.draft.fields}
+                informational={d.draft.informational_questions}
+                patchField={d.patchField}
+                commitField={d.commitField}
+                patchInfo={d.patchInfo}
+                commitInfo={d.commitInfo}
+                addInfo={d.addInfo}
+                deleteInfo={d.deleteInfo}
+              />
             )}
             {tab === 'settings' && (
               <SettingsEditor settings={d.draft.settings} patchSettings={d.patchSettings} commitSettings={d.commitSettings} />
