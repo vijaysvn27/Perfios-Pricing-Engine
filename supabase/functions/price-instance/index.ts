@@ -44,6 +44,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
+  // Basic rate limit: 60 requests / 60s per client IP (fail-open on RPC error).
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown'
+  const { data: allowed } = await admin.rpc('hit_rate_limit', { p_bucket: `price:${ip}`, p_max: 60, p_window_seconds: 60 })
+  if (allowed === false) return json({ error: 'rate limit exceeded' }, 429)
+
   const { data: snapshot, error } = await admin.rpc('get_published_config', { p_token: token })
   if (error || !snapshot) return json({ error: 'not available' }, 404)
 
