@@ -12,31 +12,36 @@ import {
 import { resetDraftToLive } from '../lib/config/versions'
 
 /**
- * Holds the draft working set. Local patches are applied immediately (so preview
- * and validation are instant); persistence happens on blur / discrete change via
- * the commit* helpers — never on every keystroke.
+ * Holds one instance's draft working set. Local patches are applied immediately
+ * (so preview and validation are instant); persistence happens on blur / discrete
+ * change via the commit* helpers — never on every keystroke. All writes are scoped
+ * to `instanceId`.
  */
-export function useDraft() {
+export function useDraft(instanceId: string | null) {
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [opError, setOpError] = useState<string | null>(null)
 
-  // Mirror the latest draft so commit closures read just-typed values, not stale ones.
   const draftRef = useRef<DraftState | null>(null)
   draftRef.current = draft
 
   const reload = useCallback(async () => {
+    if (!instanceId) {
+      setDraft(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
-      setDraft(await loadDraft())
+      setDraft(await loadDraft(instanceId))
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [instanceId])
 
   useEffect(() => {
     void reload()
@@ -68,30 +73,30 @@ export function useDraft() {
   // ---- commits (persist current local value) ----
   const commitField = useCallback((key: string) => {
     const f = draftRef.current?.fields.find((x) => x.field_key === key)
-    if (f) void run(() => upsertField(f))
-  }, [run])
+    if (f && instanceId) void run(() => upsertField(instanceId, f))
+  }, [run, instanceId])
   const commitModule = useCallback((key: string) => {
     const m = draftRef.current?.modules.find((x) => x.module_key === key)
-    if (m) void run(() => upsertModule(m))
-  }, [run])
+    if (m && instanceId) void run(() => upsertModule(instanceId, m))
+  }, [run, instanceId])
   const commitTier = useCallback((key: string) => {
     const t = draftRef.current?.cm_tiers.find((x) => x.tier_key === key)
-    if (t) void run(() => upsertTier(t))
-  }, [run])
+    if (t && instanceId) void run(() => upsertTier(instanceId, t))
+  }, [run, instanceId])
   const commitSettings = useCallback(() => {
     const s = draftRef.current?.settings
-    if (s) void run(() => saveSettings(s))
-  }, [run])
+    if (s && instanceId) void run(() => saveSettings(instanceId, s))
+  }, [run, instanceId])
 
   // ---- discrete actions (persist immediately) ----
   const addField = useCallback((f: FieldDef) => {
     setDraft((d) => (d ? { ...d, fields: [...d.fields, f] } : d))
-    void run(() => upsertField(f))
-  }, [run])
+    if (instanceId) void run(() => upsertField(instanceId, f))
+  }, [run, instanceId])
   const addTier = useCallback((t: CmTier) => {
     setDraft((d) => (d ? { ...d, cm_tiers: [...d.cm_tiers, t] } : d))
-    void run(() => upsertTier(t))
-  }, [run])
+    if (instanceId) void run(() => upsertTier(instanceId, t))
+  }, [run, instanceId])
   const toggleTag = useCallback((moduleKey: string, fieldKey: string, on: boolean) => {
     setDraft((d) => {
       if (!d) return d
@@ -101,13 +106,14 @@ export function useDraft() {
         : d.module_fields.filter((t) => !(t.module_key === moduleKey && t.field_key === fieldKey))
       return { ...d, module_fields }
     })
-    void run(() => setFieldTag(moduleKey, fieldKey, on))
-  }, [run])
+    if (instanceId) void run(() => setFieldTag(instanceId, moduleKey, fieldKey, on))
+  }, [run, instanceId])
 
   const reset = useCallback(async () => {
-    await run(() => resetDraftToLive())
+    if (!instanceId) return
+    await run(() => resetDraftToLive(instanceId))
     await reload()
-  }, [run, reload])
+  }, [run, reload, instanceId])
 
   return {
     draft,

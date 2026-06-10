@@ -4,14 +4,14 @@ import type { DraftState } from './types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** Read the full draft working set (the five normalized tables) into memory. */
-export async function loadDraft(): Promise<DraftState> {
+/** Read one instance's draft working set (the five normalized tables) into memory. */
+export async function loadDraft(instanceId: string): Promise<DraftState> {
   const [fields, modules, mf, tiers, settings] = await Promise.all([
-    supabase.from('fields').select('field_key,label,unit_price_inr,frequency,active,sort_order'),
-    supabase.from('modules').select('module_key,label,kind,pricing_type,deployment_pct,amc_pct,multiplier,applies_multiplier,active'),
-    supabase.from('module_fields').select('modules(module_key),fields(field_key)'),
-    supabase.from('cm_tiers').select('tier_key,label,license_fee_inr,amc_pct,implementation_fee_inr'),
-    supabase.from('settings').select('currency,deployment_pct,amc_pct,y2_includes_deployment,cm_model,rounding,excel_hero,excel_terms').eq('id', true).single(),
+    supabase.from('fields').select('field_key,label,unit_price_inr,frequency,active,sort_order').eq('instance_id', instanceId),
+    supabase.from('modules').select('module_key,label,kind,pricing_type,deployment_pct,amc_pct,multiplier,applies_multiplier,active').eq('instance_id', instanceId),
+    supabase.from('module_fields').select('modules(module_key),fields(field_key)').eq('instance_id', instanceId),
+    supabase.from('cm_tiers').select('tier_key,label,license_fee_inr,amc_pct,implementation_fee_inr').eq('instance_id', instanceId),
+    supabase.from('settings').select('currency,deployment_pct,amc_pct,y2_includes_deployment,cm_model,rounding,excel_hero,excel_terms').eq('instance_id', instanceId).single(),
   ])
   const err = fields.error || modules.error || mf.error || tiers.error || settings.error
   if (err) throw new Error(`loadDraft failed: ${err.message}`)
@@ -31,29 +31,30 @@ export async function loadDraft(): Promise<DraftState> {
   }
 }
 
-export async function upsertField(f: FieldDef): Promise<void> {
-  const { error } = await supabase.from('fields').upsert(f, { onConflict: 'field_key' })
+export async function upsertField(instanceId: string, f: FieldDef): Promise<void> {
+  const { error } = await supabase.from('fields').upsert({ ...f, instance_id: instanceId }, { onConflict: 'instance_id,field_key' })
   if (error) throw new Error(error.message)
 }
 
-export async function upsertModule(m: ModuleDef): Promise<void> {
-  const { error } = await supabase.from('modules').upsert(m, { onConflict: 'module_key' })
+export async function upsertModule(instanceId: string, m: ModuleDef): Promise<void> {
+  const { error } = await supabase.from('modules').upsert({ ...m, instance_id: instanceId }, { onConflict: 'instance_id,module_key' })
   if (error) throw new Error(error.message)
 }
 
-export async function upsertTier(t: CmTier): Promise<void> {
-  const { error } = await supabase.from('cm_tiers').upsert(t, { onConflict: 'tier_key' })
+export async function upsertTier(instanceId: string, t: CmTier): Promise<void> {
+  const { error } = await supabase.from('cm_tiers').upsert({ ...t, instance_id: instanceId }, { onConflict: 'instance_id,tier_key' })
   if (error) throw new Error(error.message)
 }
 
-export async function saveSettings(s: Settings): Promise<void> {
-  const { error } = await supabase.from('settings').update(s).eq('id', true)
+export async function saveSettings(instanceId: string, s: Settings): Promise<void> {
+  const { error } = await supabase.from('settings').update(s).eq('instance_id', instanceId)
   if (error) throw new Error(error.message)
 }
 
-/** Tag/untag a field to a module by keys (the RPC resolves UUIDs server-side). */
-export async function setFieldTag(moduleKey: string, fieldKey: string, on: boolean): Promise<void> {
+/** Tag/untag a field to a module by keys (the RPC resolves UUIDs server-side, scoped to the instance). */
+export async function setFieldTag(instanceId: string, moduleKey: string, fieldKey: string, on: boolean): Promise<void> {
   const { error } = await supabase.rpc('set_field_tag', {
+    p_instance: instanceId,
     p_module_key: moduleKey,
     p_field_key: fieldKey,
     p_on: on,

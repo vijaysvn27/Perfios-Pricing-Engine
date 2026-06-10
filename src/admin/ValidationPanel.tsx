@@ -5,12 +5,13 @@ import { publish } from '../lib/config/versions'
 import { btnGreen, card, inp } from './styles'
 
 interface Props {
+  instanceId: string
   snapshot: ConfigSnapshot
   errors: ValidationError[]
   onPublished: (versionNo: number) => void
 }
 
-export default function ValidationPanel({ snapshot, errors, onPublished }: Props) {
+export default function ValidationPanel({ instanceId, snapshot, errors, onPublished }: Props) {
   const [publishedBy, setPublishedBy] = useState('admin')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -22,7 +23,7 @@ export default function ValidationPanel({ snapshot, errors, onPublished }: Props
     setErr(null)
     setMsg(null)
     try {
-      const v = await publish(snapshot, publishedBy)
+      const v = await publish(instanceId, snapshot, publishedBy)
       setMsg(`Published version ${v} (now live).`)
       onPublished(v)
     } catch (e) {

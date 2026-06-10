@@ -3,24 +3,25 @@ import { listVersions, rollback, type VersionRow } from '../lib/config/versions'
 import { btn, card, th } from './styles'
 
 interface Props {
+  instanceId: string
   /** Bumped by the parent after a publish so the list refreshes. */
   refreshKey: number
   onRolledBack: () => void
 }
 
-export default function VersionHistory({ refreshKey, onRolledBack }: Props) {
+export default function VersionHistory({ instanceId, refreshKey, onRolledBack }: Props) {
   const [rows, setRows] = useState<VersionRow[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     try {
-      setRows(await listVersions())
+      setRows(await listVersions(instanceId))
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [instanceId])
 
   useEffect(() => {
     void load()
@@ -29,7 +30,7 @@ export default function VersionHistory({ refreshKey, onRolledBack }: Props) {
   async function onRollback(versionNo: number) {
     setBusy(versionNo)
     try {
-      await rollback(versionNo)
+      await rollback(instanceId, versionNo)
       await load()
       onRolledBack()
     } catch (e) {
