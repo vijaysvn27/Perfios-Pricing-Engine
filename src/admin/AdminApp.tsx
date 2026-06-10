@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { buildSnapshot } from '../lib/config/buildSnapshot'
 import { validateDraft } from '../lib/config/validateDraft'
-import { loadInstances, type InstanceRow } from '../lib/config/instancesRepo'
+import { loadInstances, loadLiveVersions, type InstanceRow } from '../lib/config/instancesRepo'
 import { useDraft } from './useDraft'
 import FieldsEditor from './FieldsEditor'
 import ModulesEditor from './ModulesEditor'
@@ -10,11 +10,13 @@ import SettingsEditor from './SettingsEditor'
 import VersionHistory from './VersionHistory'
 import PreviewPanel from './PreviewPanel'
 import ValidationPanel from './ValidationPanel'
-import { btn, card } from './styles'
+import InstancesManager from './InstancesManager'
+import { btn, card, inp } from './styles'
 
-type Tab = 'fields' | 'modules' | 'cm' | 'settings' | 'versions'
+type Tab = 'instances' | 'fields' | 'modules' | 'cm' | 'settings' | 'versions'
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'instances', label: 'Instances' },
   { id: 'fields', label: 'Fields' },
   { id: 'modules', label: 'Modules' },
   { id: 'cm', label: 'CM Tiers' },
@@ -24,33 +26,39 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function AdminApp() {
   const [instances, setInstances] = useState<InstanceRow[]>([])
+  const [liveVersions, setLiveVersions] = useState<Record<string, number>>({})
   const [instanceId, setInstanceId] = useState<string | null>(null)
   const [instErr, setInstErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadInstances()
-      .then((list) => {
-        setInstances(list)
-        // Default to the Template instance (selector to switch arrives in Step 4).
-        const tmpl = list.find((i) => i.is_template) ?? list[0]
-        setInstanceId(tmpl?.id ?? null)
-      })
-      .catch((e: unknown) => setInstErr(e instanceof Error ? e.message : String(e)))
-  }, [])
-
-  const d = useDraft(instanceId)
-  const [tab, setTab] = useState<Tab>('fields')
+  const [tab, setTab] = useState<Tab>('instances')
   const [refreshKey, setRefreshKey] = useState(0)
 
+  const reloadInstances = useCallback(async () => {
+    try {
+      const [list, lv] = await Promise.all([loadInstances(), loadLiveVersions()])
+      setInstances(list)
+      setLiveVersions(lv)
+      setInstanceId((cur) => cur ?? (list.find((i) => i.is_template) ?? list[0])?.id ?? null)
+      setInstErr(null)
+    } catch (e) {
+      setInstErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  useEffect(() => {
+    void reloadInstances()
+  }, [reloadInstances])
+
+  const d = useDraft(instanceId)
   const snapshot = useMemo(() => (d.draft ? buildSnapshot(d.draft) : null), [d.draft])
   const errors = useMemo(() => (d.draft ? validateDraft(d.draft) : []), [d.draft])
 
+  const templateId = instances.find((i) => i.is_template)?.id ?? null
   const currentInstance = instances.find((i) => i.id === instanceId)
 
-  if (instErr || d.error) {
-    return <div className="mx-auto max-w-2xl p-8"><div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">Could not load admin: {instErr ?? d.error}</div></div>
+  if (instErr) {
+    return <div className="mx-auto max-w-2xl p-8"><div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">Could not load admin: {instErr}</div></div>
   }
-  if (!instanceId || d.loading || !d.draft || !snapshot) {
+  if (instances.length === 0) {
     return <div className="mx-auto max-w-2xl p-8 text-slate-500">Loading…</div>
   }
 
@@ -60,33 +68,56 @@ export default function AdminApp() {
     setRefreshKey((k) => k + 1)
   }
 
+  const afterPublishOrRollback = () => {
+    setRefreshKey((k) => k + 1)
+    void reloadInstances()
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-perfios-blue">
-          Admin — {currentInstance?.name ?? 'pricing configuration'}
-          {currentInstance?.is_template && <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500">Template</span>}
-        </h1>
-        <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-perfios-blue">Admin</h1>
+          <label className="flex items-center gap-2 text-sm text-slate-500">
+            Editing
+            <select className={inp} value={instanceId ?? ''} onChange={(e) => setInstanceId(e.target.value)}>
+              {instances.map((i) => (
+                <option key={i.id} value={i.id}>{i.name}{i.is_template ? ' (Template)' : ''}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {tab !== 'instances' && <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>}
       </div>
 
       {d.opError && <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">Save error: {d.opError}</div>}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
-        <div>
-          <div className="mb-3 flex gap-1 border-b border-slate-200">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={'px-3 py-2 text-sm ' + (tab === t.id ? 'border-b-2 border-perfios-blue font-semibold text-perfios-blue' : 'text-slate-500')}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+      <div className="mb-3 flex gap-1 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={'px-3 py-2 text-sm ' + (tab === t.id ? 'border-b-2 border-perfios-blue font-semibold text-perfios-blue' : 'text-slate-500')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
+      {tab === 'instances' ? (
+        <InstancesManager
+          instances={instances}
+          liveVersions={liveVersions}
+          templateId={templateId}
+          selectedInstanceId={instanceId}
+          onSelect={(id) => { setInstanceId(id); setTab('fields') }}
+          onChanged={() => void reloadInstances()}
+        />
+      ) : d.loading || !d.draft || !snapshot || !instanceId ? (
+        <div className="p-8 text-slate-500">Loading {currentInstance?.name ?? 'instance'} draft…</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
           <div className={card}>
             {tab === 'fields' && (
               <FieldsEditor fields={d.draft.fields} patchField={d.patchField} commitField={d.commitField} addField={d.addField} />
@@ -101,16 +132,16 @@ export default function AdminApp() {
               <SettingsEditor settings={d.draft.settings} patchSettings={d.patchSettings} commitSettings={d.commitSettings} />
             )}
             {tab === 'versions' && (
-              <VersionHistory instanceId={instanceId} refreshKey={refreshKey} onRolledBack={() => { void d.reload(); setRefreshKey((k) => k + 1) }} />
+              <VersionHistory instanceId={instanceId} refreshKey={refreshKey} onRolledBack={() => { void d.reload(); afterPublishOrRollback() }} />
             )}
           </div>
-        </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-          <PreviewPanel snapshot={snapshot} />
-          <ValidationPanel instanceId={instanceId} snapshot={snapshot} errors={errors} onPublished={() => setRefreshKey((k) => k + 1)} />
-        </aside>
-      </div>
+          <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+            <PreviewPanel snapshot={snapshot} />
+            <ValidationPanel instanceId={instanceId} snapshot={snapshot} errors={errors} onPublished={afterPublishOrRollback} />
+          </aside>
+        </div>
+      )}
     </div>
   )
 }
