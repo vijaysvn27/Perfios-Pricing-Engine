@@ -3,6 +3,8 @@ import { calculatePricing, MODULE_KEY } from '../lib/engine'
 import type { ConfigSnapshot, EngineResult, FieldDef } from '../lib/engine'
 import { loadLiveConfig } from '../lib/supabase'
 import { formatINR } from '../lib/format'
+import { buildClientBreakdown, frequencyLabel } from '../lib/breakdown'
+import { exportBreakdownXlsx } from '../lib/excel'
 
 export default function Calculator() {
   const [config, setConfig] = useState<ConfigSnapshot | null>(null)
@@ -34,6 +36,11 @@ export default function Calculator() {
   }, [config, selected])
 
   const cmSelected = selected.has(MODULE_KEY.CM)
+
+  const breakdown = useMemo(
+    () => (result && config ? buildClientBreakdown(result, config) : null),
+    [result, config],
+  )
 
   function toggleModule(key: string) {
     setResult(null)
@@ -170,18 +177,58 @@ export default function Calculator() {
         Calculate
       </button>
 
-      {result && (
-        <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Year 1</div>
-            <div className="mt-1 text-3xl font-bold text-perfios-blue">{formatINR(result.year1)}</div>
+      {breakdown && (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Pricing breakdown
+            </h2>
+            <button
+              type="button"
+              onClick={() => exportBreakdownXlsx(breakdown)}
+              disabled={breakdown.lines.length === 0}
+              className="rounded-lg border border-perfios-green px-4 py-2 text-sm font-semibold text-perfios-green transition hover:bg-perfios-green hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Download Excel
+            </button>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Year 2</div>
-            <div className="mt-1 text-3xl font-bold text-perfios-blue">{formatINR(result.year2)}</div>
+
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
+                  <th className="px-4 py-2 font-semibold">Line</th>
+                  <th className="px-4 py-2 font-semibold">Frequency</th>
+                  <th className="px-4 py-2 text-right font-semibold">Year 1</th>
+                  <th className="px-4 py-2 text-right font-semibold">Year 2</th>
+                </tr>
+              </thead>
+              <tbody>
+                {breakdown.lines.map((l, i) => (
+                  <tr key={i} className="border-t border-slate-100">
+                    <td className="px-4 py-2">
+                      <div className="text-slate-700">{l.label}</div>
+                      {l.includes && l.includes.length > 0 && (
+                        <div className="text-xs text-slate-400">Includes: {l.includes.join(', ')}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-slate-500">{frequencyLabel(l.frequency)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">{formatINR(l.year1)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">{formatINR(l.year2)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                  <td className="px-4 py-2" colSpan={2}>Total</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-perfios-blue">{formatINR(breakdown.year1Total)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-perfios-blue">{formatINR(breakdown.year2Total)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <p className="text-xs text-slate-400 sm:col-span-2">
-            Base cost only. Year 1 and Year 2 per the published configuration.
+
+          <p className="mt-2 text-xs text-slate-400">
+            Base cost only, per the published configuration. Partners add their own margin in the
+            downloaded Excel.
           </p>
         </section>
       )}
