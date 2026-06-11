@@ -140,6 +140,7 @@ export default function AdminApp() {
                 commitInfo={d.commitInfo}
                 addInfo={d.addInfo}
                 deleteInfo={d.deleteInfo}
+                reorderQuestions={d.reorderQuestions}
               />
             )}
             {tab === 'settings' && (

@@ -128,6 +128,35 @@ export function useDraft(instanceId: string | null) {
     if (instanceId) void run(() => deleteInformationalQuestion(instanceId, key))
   }, [run, instanceId])
 
+  /**
+   * Persist a section/order reshuffle: the caller computes the full next arrays plus
+   * the keys whose section/section_sort/item_sort changed; we update local state and
+   * upsert only the changed rows. Reads from the passed-in arrays (not the ref), so
+   * there is no stale-state race when many rows move at once.
+   */
+  const reorderQuestions = useCallback(
+    (
+      nextFields: FieldDef[],
+      nextInfos: InformationalQuestion[],
+      changedFieldKeys: string[],
+      changedInfoKeys: string[],
+    ) => {
+      setDraft((d) => (d ? { ...d, fields: nextFields, informational_questions: nextInfos } : d))
+      if (!instanceId) return
+      void run(async () => {
+        for (const k of changedFieldKeys) {
+          const f = nextFields.find((x) => x.field_key === k)
+          if (f) await upsertField(instanceId, f)
+        }
+        for (const k of changedInfoKeys) {
+          const q = nextInfos.find((x) => x.question_key === k)
+          if (q) await upsertInformationalQuestion(instanceId, q)
+        }
+      })
+    },
+    [run, instanceId],
+  )
+
   const reset = useCallback(async () => {
     if (!instanceId) return
     await run(() => resetDraftToLive(instanceId))
@@ -155,6 +184,7 @@ export function useDraft(instanceId: string | null) {
     commitInfo,
     addInfo,
     deleteInfo,
+    reorderQuestions,
     reset,
   }
 }
