@@ -211,11 +211,17 @@ export function buildQuestionnaireWorkbook(
   conf.font = { bold: true, size: 10, color: { argb: 'FF94A3B8' } }
   conf.alignment = { horizontal: 'right' }
 
-  ws.getCell('B2').value = 'Customer:'
-  ws.getCell('B2').font = { bold: true, color: { argb: 'FF64748B' } }
-  ws.getCell(CUSTOMER_CELL).value = opts.customerName ?? ''
+  // Customer sits in the wide Question column (C). The "Customer: " label is applied
+  // via a TEXT number format, so the cell VALUE stays the raw name (the parser reads
+  // it back losslessly) while it DISPLAYS "Customer: <name>" — fully visible and bold,
+  // instead of a "Customer:" label clipped inside the narrow # column.
+  const cust = ws.getCell(CUSTOMER_CELL)
+  cust.value = opts.customerName ?? ''
+  cust.numFmt = '"Customer:  "@'
+  cust.font = { bold: true, size: 12, color: { argb: 'FF1C58A7' } }
   ws.getCell('D2').value = 'Date:'
   ws.getCell('D2').font = { bold: true, color: { argb: 'FF64748B' } }
+  ws.getCell('D2').alignment = { horizontal: 'right' }
   ws.getCell(DATE_CELL).value = isoDate(today)
 
   ws.mergeCells('B3:E3')

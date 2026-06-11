@@ -179,6 +179,17 @@ describe('questionnaire round-trip', () => {
     await expect(parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)).rejects.toThrow(/not a Perfios questionnaire/)
   })
 
+  it('customer name is the raw cell value (label is a display-only number format)', async () => {
+    const wb = buildQuestionnaireWorkbook(form, ['DSPM'], { customerName: 'Acme Bank' })
+    const ws = wb.getWorksheet('Questionnaire')!
+    const c2 = ws.getCell('C2')
+    expect(c2.value).toBe('Acme Bank') // NOT "Customer: Acme Bank" — label is format only
+    expect(String(c2.numFmt)).toMatch(/Customer/)
+    const buf = await wb.xlsx.writeBuffer()
+    const parsed = await parseQuestionnaireBuffer(buf as unknown as ArrayBuffer, form)
+    expect(parsed.customerName).toBe('Acme Bank')
+  })
+
   it('round-trips pre-filled values (quantities, informational, customer)', async () => {
     const wb = buildQuestionnaireWorkbook(form, ['DSPM', 'CM'], {
       customerName: 'Prefill Co',
