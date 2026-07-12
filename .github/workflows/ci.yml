@@ -17,9 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+ required: @supabase/realtime-js needs native WebSocket at import
+      # time, which Node 20 lacks (test suites import the supabase client).
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund 2>&1 | tee ci-build.log

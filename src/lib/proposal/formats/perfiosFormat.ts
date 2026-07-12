@@ -20,7 +20,7 @@ function paymentTermsBullets(validityDays: number): string[] {
   ]
 }
 
-function scopeStatus(mode: DeploymentMode, key: 'dspm' | 'dam' | 'endpoint', enabled: boolean): string {
+function scopeStatus(mode: DeploymentMode, _key: 'dspm' | 'dam' | 'endpoint', enabled: boolean): string {
   if (mode === 'saas') return 'Not available (SaaS is CM-only)'
   return enabled ? 'Included' : 'Excluded'
 }
