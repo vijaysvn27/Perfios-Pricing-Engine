@@ -10,9 +10,8 @@ Each task lists files + verification. Stages ship independently.
       + both Consentick infra columns (D1)
 - [x] `src/lib/engine2/engine2.ts` — `price()` / `priceAllModes()` with trace
 - [x] `src/lib/engine2/engine2.test.ts` — golden Excel parity fixtures
-- [ ] Run `npx vitest run src/lib/engine2` green (blocked on Node install at
-      commit time — MUST pass before Stage 2 starts)
-- [ ] `npm run typecheck` green
+- [x] `npx vitest run` green — 74/74 (21 new + 53 existing), verified 2026-07-12
+- [x] `npm run typecheck` green — verified 2026-07-12
 
 ## Stage 2 — rate card persistence + admin page
 
