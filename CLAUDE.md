@@ -23,6 +23,42 @@ base cost. The tool outputs BASE COST ONLY. No margin, ever. Partners add margin
    The calculator always reads the latest PUBLISHED version. Every publish is versioned and
    one-click reversible (rollback).
 
+## Addendum — DPDP Suite Proposal Builder (2026-07-12)
+
+The rules above still govern the **partner-facing calculator** (share links,
+`#/c/:token`) unchanged: never per-unit prices, never margin, DATA not code,
+draft → publish → rollback. The addendum below is scoped to the new,
+internal, authenticated **AM proposal surface** only.
+
+1. The AM proposal wizard (`#/proposals`, `src/am/`) is internal-facing and
+   MAY show line-item detail, list price, discount, and negotiation fields —
+   this supersedes rule 1 for that surface only. The partner calculator is
+   untouched.
+2. **Channel is internal-only, always.** The deal's channel (Direct / Aurva /
+   TechJockey / PwC) must NEVER appear in anything a client sees or receives
+   — on-screen client preview, Excel export, or printed PDF. This is enforced
+   structurally, not by convention: client render paths only ever receive a
+   `ClientSafeProposal` (from `toClientSafe()`), whose type has no channel or
+   internal-notes field, plus a `scanForBlocklist()` string scan (terms:
+   Aurva, TechJockey, Tech Jockey, PwC) that every export path must assert
+   empty before writing. Both live in `src/lib/proposal/clientSafe.ts`
+   (`CLIENT_BLOCKLIST`). Keep this invariant — type-level exclusion first,
+   blocklist scan as the backstop — when editing that file or any export path.
+3. **All pricing math lives in `src/lib/engine2` only** (the Proposal
+   Builder's pricing brain — `price()` / `priceAllModes()`, with a full
+   calculation `trace`). UI and export code never do arithmetic; it only
+   renders `engine2` output. This mirrors the original engine rule 2/3 above,
+   restated for the new module.
+4. The Excel-parity golden fixtures in `src/lib/engine2/engine2.test.ts` are
+   regression gates: never edit an expected value without a rate-card change
+   that actually justifies it.
+
+**Environment note:** the dev machine cannot execute Node (endpoint
+security). Verification happens in GitHub Actions — full build/test logs are
+published to the `ci-logs` branch (readable via `git fetch`, since plain git
+transport works even though `api.github.com` does not) — and in Vercel
+deploys.
+
 ## Engineering standards
 - Typed throughout. The pricing engine is a pure, deterministic, unit-tested function:
   same config plus same inputs always returns the same numbers.

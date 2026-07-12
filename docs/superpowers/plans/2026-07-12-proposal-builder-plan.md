@@ -13,68 +13,92 @@ Each task lists files + verification. Stages ship independently.
 - [x] `npx vitest run` green — 74/74 (21 new + 53 existing), verified 2026-07-12
 - [x] `npm run typecheck` green — verified 2026-07-12
 
-## Stage 2 — rate card persistence + admin page
+## Stage 2 — rate card persistence + admin page  ✅ shipped
 
-1. Migration `0026_rate_cards.sql`: `rate_cards(id, instance_id, status
+1. [x] Migration `0026_rate_cards.sql`: `rate_cards(id, instance_id, status
    draft|published, version, snapshot jsonb, created_by, created_at)` +
-   RLS admin-only write, published readable by `am` role. Seed row from
-   RATE_CARD_SEED.
-2. `src/lib/rateCard/repo.ts` — loadDraft/saveDraft/publish/rollback/listVersions
-   (reuse the version-guard pattern from `config/versions.ts`).
-3. `src/lib/rateCard/validate.ts` — caps strictly increasing, pcts in [0,1],
-   fx > 0, no empty groups. Unit tests.
-4. `src/admin/RateCardPage.tsx` — four groups (On-Prem slabs / SaaS tiers /
-   Estate rates / Parameters); both infra columns visible, active basis
-   highlighted, one-click basis switch with before/after preview on a sample
-   deal; right rail = live trace worked example (calls `price()` on every
-   edit); publish bar with validation + version history.
-5. Feature flag `VITE_RATECARD_ADMIN=1` switches AdminApp between old tabs
-   and the new page.
-   Verify: edit a slab price → trace updates; publish → new version; rollback
-   restores; old tabs untouched with flag off.
+   RLS admin-only write, published readable by any authenticated user —
+   note: implemented as "any authenticated session" rather than a distinct
+   `am` role (no separate role was added; see Stage 3 note). Seed row comes
+   from `RATE_CARD_SEED` via the read-only fallback path, not a seed insert.
+2. [x] `src/lib/rateCard/repo.ts` — `loadDraft`/`saveDraft`/`publishDraft`/
+   `rollback`/`listVersions`, plus `isMissingTable` graceful-degradation
+   (falls back to `RATE_CARD_SEED`, `persisted: false`, instead of throwing
+   when the table isn't migrated yet).
+3. [x] `src/lib/rateCard/validate.ts` — caps strictly increasing, pcts in
+   [0,1], fx > 0, no empty groups. Unit tests in `validate.test.ts`.
+4. [x] `src/admin/RateCardPage.tsx` (+ `src/admin/rateCard/` helpers) — four
+   groups (On-Prem slabs / SaaS tiers / Estate rates / Parameters); both
+   infra columns visible with active basis highlighted and a one-click
+   basis switch; right rail = live trace worked example (calls `price()`
+   on every edit); publish bar with validation + version history/rollback.
+5. [x] No feature flag — additive tab instead. "Rate Card" was added as a
+   new tab alongside the existing Fields / Modules / CM Tiers / Questions /
+   Settings / Versions tabs (all left in place, untouched) rather than
+   gating a replacement behind `VITE_RATECARD_ADMIN`.
+   Verify: edit a slab price → trace updates; publish → new version;
+   rollback restores; old tabs untouched — all hold.
 
-## Stage 3 — AM wizard + proposals
+## Stage 3 — AM wizard + proposals  ✅ shipped
 
-1. Migration `0027_proposals.sql`: `proposals(id, name, customer, channel,
-   inputs jsonb, rate_card_version, totals jsonb, created_by, updated_at)`;
-   `am` role in auth allowlist; RLS: am/admin read-write own instance rows.
-2. `src/am/ProposalWizard.tsx` — 4 steps (Deal / Scope / Commercials /
-   Present) + persistent live price panel with "How this price is calculated"
-   trace accordion. Channel field labelled "Internal — never shown to client".
-   Scope questions worded 1:1 with the finalized DPDP Pricing Questionnaire.
-3. `src/lib/proposal/clientSafe.ts` — `toClientSafe(proposal): ClientSafeProposal`
-   (channel/internal fields absent at type level) + partner-name blocklist
-   test (Aurva, TechJockey, Tech Jockey, PwC) over every render output.
-4. Routes: `/#/proposals` (list), `/#/proposals/:id` (wizard). Admin sees all.
-   Verify: create → save → reopen → duplicate → reprice-against-new-version
-   shows old vs new diff.
+1. [x] No separate `0027_proposals.sql` — the `proposals` table was added
+   directly in `0026_rate_cards.sql` alongside `rate_cards`. No distinct
+   `am` auth role either: `useAuth` only knows `admin`/`viewer`/`null`, and
+   any authenticated (non-admin) user can reach `#/proposals`; RLS on
+   `proposals` is owner-or-admin (`created_by = auth.uid() or is_admin()`)
+   rather than a role-based policy.
+2. [x] `src/am/ProposalWizard.tsx` — 4 steps (Deal / Scope / Commercials /
+   Present) + persistent live price panel (`PricePanel.tsx`) with "How this
+   price is calculated" trace accordion. Channel field labelled "Internal —
+   never shown to client". Scope questions worded 1:1 with the finalized
+   DPDP Pricing Questionnaire.
+3. [x] `src/lib/proposal/clientSafe.ts` — `toClientSafe(proposal):
+   ClientSafeProposal` (channel/internal fields absent at type level) +
+   `CLIENT_BLOCKLIST`/`scanForBlocklist` partner-name scan (Aurva,
+   TechJockey, Tech Jockey, PwC), asserted empty in `clientSafe.test.ts`
+   and re-run over every export payload.
+4. [x] Routes: `#/proposals` (list), wizard is in-view (not a separate
+   `:id` route — `ProposalsApp` swaps list/wizard views internally). Admin
+   and any authenticated user can reach it via nav.
+   Note: create → save → reopen → duplicate all work; repricing against a
+   newer rate-card version happens automatically on every save (silently
+   updates `rate_card_version` to the currently loaded published version) —
+   there is no "old vs new" diff view. Not built; not currently planned.
 
-## Stage 4 — presentation formats + exports
+## Stage 4 — presentation formats + exports  ✅ shipped
 
-1. `src/lib/proposal/formats/` — three pure render-model builders:
+1. [x] `src/lib/proposal/formats/` — three pure render-model builders:
    `moduleWise.ts`, `saasStyle.ts`, `perfiosFormat.ts` (Client Proposal
-   layout; compare mode → Model Comparison layout). Snapshot tests.
-2. `src/lib/proposal/excelExport.ts` — client workbook (Proposal sheet,
-   Comparison sheet, BOM annexure sheet) following existing `excel.ts`
-   library choice; INR Indian grouping; no channel strings (blocklist test
-   runs over generated cells).
-3. `src/lib/proposal/bom.ts` — Consentick tier → "Infrastructure You
-   Provide" annexure rows (data lives in rate card `annexures.onprem_bom`,
-   seeded from the sizing workbook; admin-editable later).
-4. PDF via print CSS on the preview route (`react-to-print` or plain
-   `window.print` with `@media print` styles).
-   Verify: export all 3 formats × 3 modes; open xlsx; grep exports for
-   blocklist; On-Prem export contains annexure, SaaS export does not.
+   layout; compare mode → Model Comparison layout), assembled via
+   `formats/index.ts`. Snapshot tests in `formats.test.ts`.
+2. [x] `src/lib/proposal/excelExport.ts` — client workbook via `exceljs`;
+   INR Indian grouping; `scanForBlocklist` runs over the render model and
+   BOM before any cell is written, throwing on a hit rather than exporting.
+3. [x] `src/lib/proposal/bomData.ts` (named `bomData.ts`, not `bom.ts`) —
+   Consentick tier → "Infrastructure You Provide" annexure rows, keyed off
+   DP base via `bomForDpBase`/`tierKeyForDpBase`; data is static seed data
+   today, not yet wired into rate card `annexures.onprem_bom` for
+   admin-editing (still hardcoded in the module, per the spec's "admin
+   editable later" note).
+4. [x] PDF via plain `window.print()` + `@media print` CSS scoped to a
+   `.print-root` wrapper (no `react-to-print` dependency added).
+   Verify: all 3 formats × 3 modes render; xlsx export blocked and flagged
+   if blocklist terms are present; On-Prem/Hybrid export includes the BOM
+   annexure, SaaS export does not — all hold.
 
-## Stage 5 — polish
+## Deferred (Stage 5 — not shipped)
 
-- Questionnaire xlsx upload → prefill Scope step (reuse `questionnaire.ts`
-  parse path).
-- Quote-event log entries for proposal create/export (reuse
-  `logQuoteEvent`).
-- FX staleness warning (>90 days unedited).
-- Remove feature flag; retire old admin tabs; update README + CLAUDE.md
-  (AM surface may show line detail — supersedes rule 1 for AM only).
+- [ ] Questionnaire xlsx upload → prefill Scope step (reuse
+  `questionnaire.ts` parse path). No upload/prefill code exists yet in
+  `src/am/steps/Step2Scope.tsx`.
+- [ ] Quote-event log entries for proposal create/export (reuse
+  `logQuoteEvent`). Proposal save/export paths do not call it.
+- [ ] FX staleness warning (>90 days since `fx_inr_per_usd` last edited).
+  Not implemented — no last-edited timestamp is tracked per rate.
+- [ ] Retire old admin tabs (Fields/Modules/CM Tiers/Questions/Settings) now
+  that Rate Card has shipped — currently both live side by side
+  indefinitely; no feature flag to remove since none was added (see Stage
+  2 note).
 
 ## Standing rules
 

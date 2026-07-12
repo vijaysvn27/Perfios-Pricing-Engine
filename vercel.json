@@ -1,4 +1,9 @@
 {
   "installCommand": "npm install --include=dev --no-audit --no-fund",
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run build",
+  "git": {
+    "deploymentEnabled": {
+      "ci-logs": false
+    }
+  }
 }
