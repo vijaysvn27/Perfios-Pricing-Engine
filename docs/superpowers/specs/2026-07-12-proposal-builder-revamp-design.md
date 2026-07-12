@@ -204,6 +204,46 @@ dp_base_y2 > committed and the y2-floor-binding case). Engine ships only
 when all parity fixtures pass. Property tests: slab/tier boundary values
 (exactly at cap, cap+1), zero quantities, SaaS excludes estate.
 
+### Amendment (2026-07-12): SaaS per-user methodology
+
+Source: "Vi - Documentation" leadership call, 2026-07-07 (Olivia
+Mukhopadhyay). Decided model, effective immediately, superseding the SaaS/
+Hybrid Year-2+ rule in §6 above:
+
+- **Kept unchanged**: annual licence, one-time implementation (15% of
+  licence), infra by committed-base tier (`infra_usd_mo × 12 × fx ×
+  (1 + sgna_uplift_pct)`), and Platform (annual) = licence + round(infra).
+  Year 1 = implementation + platform — numerically identical to today.
+- **New — per-user derivation**: `per_user_rate = platform / dp_base_y1`
+  (the committed base), kept unrounded internally and rendered to clients
+  as "₹X.XX per user per year".
+- **New — Year 2+ rule**: `max(round(y2_floor_pct × platform),
+  round(dp_base_y2 × per_user_rate))`. This REPLACES "platform fee +
+  overage above committed" entirely. Pricing now follows usage in both
+  directions: a growing user base bills more at the same rate, and a
+  shrinking one bills less, floored at `y2_floor_pct` (30% in the seed
+  card) of the Year-1 platform fee — a floor that is now actually
+  reachable (previously the overage formula could only add to the
+  platform fee, never subtract).
+- **Superseded**: the per-tier `overage_inr_per_user` rate card column.
+  The field is kept on `SaasTier` and in the seed for history/rollback,
+  but `priceCmSaas` no longer reads it — the trace's `Overage (Year 2+)`
+  step is replaced by `Per-user rate`, `Year 2+ usage`, and
+  `Year 2+ (with N% floor)`.
+- **Client caveat (mandatory on every SaaS/Hybrid proposal)**: data
+  principals who modify, renew, or revoke consent in a later year are not
+  counted as new users — they remain covered under the committed base.
+  Only net-new data principals count toward the user count used in the
+  Year 2+ calculation.
+- **Worked example (seed 25L tier)**: committed 2,500,000; infra
+  4,387,579; platform 5,887,579; per-user rate 2.3550316. Y1 unchanged at
+  6,112,579. Y2 at committed base stays 5,887,579 (round(2,500,000 ×
+  2.3550316) reproduces platform exactly). Y2 growth to 3,000,000 users
+  now bills 7,065,095 (replacing the old overage-based 7,387,579). Y2
+  shrink to 500,000 users bills the floor, 1,766,274 (round(500,000 ×
+  2.3550316) = 1,177,516 is below the floor) — the first fixture where the
+  floor actually binds.
+
 ## 7. AM Proposal Wizard
 
 Four steps, one live price panel (with trace toggle) alongside:

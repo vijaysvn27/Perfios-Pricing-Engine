@@ -37,7 +37,7 @@ describe('On-Prem CM (Excel parity: Calculator D61–D65)', () => {
   })
 })
 
-describe('SaaS CM (Excel parity: Calculator D66–D76; Excel 61,12,579.2 → rounded)', () => {
+describe('SaaS CM (2026-07-07 per-user methodology; committed 25L tier: infra 43,87,579, platform 58,87,579, per-user rate 2.3550316)', () => {
   it('25L committed, no growth: Y1 61,12,579 / Y2+ 58,87,579', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const cm = res.lines[0]
@@ -47,14 +47,29 @@ describe('SaaS CM (Excel parity: Calculator D66–D76; Excel 61,12,579.2 → rou
     expect(cm.one_time_inr).toBe(225_000)
     // Model Comparison F27: 1,78,87,737.6 → rounded
     expect(cm.tco_inr).toBe(17_887_737)
+    expect(res.saas_per_user_rate).toBeCloseTo(2.3550316)
   })
 
-  it('overage: Y2 base 30L over 25L committed adds 5,00,000 × ₹3', () => {
+  it('per-user rate at committed usage reproduces the platform fee exactly: round(committed × rate) === platform', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
+    const rate = res.saas_per_user_rate
+    expect(rate).toBeDefined()
+    expect(Math.round(base.dp_base_y1 * (rate as number))).toBe(5_887_579)
+  })
+
+  it('growth: Y2 base 30L over 25L committed bills 30,00,000 users × the per-user rate (replaces the old overage line)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 3_000_000 })
-    expect(res.lines[0].recurring_inr).toBe(5_887_579 + 1_500_000)
+    // round(30,00,000 × 2.3550316) = 70,65,095
+    expect(res.lines[0].recurring_inr).toBe(7_065_095)
   })
 
-  it('Year-2 floor never exceeds platform + overage (guard, matches MAX in D74)', () => {
+  it('shrink: Y2 base 5L under 25L committed floors at 30% of the Year-1 platform fee (floor finally binds)', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 500_000 })
+    // usage round(5,00,000 × 2.3550316) = 11,77,516 < floor round(0.3 × 58,87,579) = 17,66,274
+    expect(res.lines[0].recurring_inr).toBe(1_766_274)
+  })
+
+  it('Year-2 floor is a lower bound (guard, matches MAX in the engine)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(Math.round(0.3 * 5_887_579))
   })

@@ -23,8 +23,11 @@ export default function ExplainerCard() {
           <p className="mt-1">
             The committed user base picks a tier, whose monthly hosting cost converts to an annual INR figure via FX
             and the SG&amp;A uplift, and adds to the SaaS licence to form the platform fee. Year 1 is the platform fee
-            plus a one-time implementation charge on the licence. Year 2+ is the platform fee plus any overage for
-            users beyond the commitment, never less than the Year-2 floor percentage of the Year-1 platform fee.
+            plus a one-time implementation charge on the licence. The platform fee divided by the committed base gives
+            a per-user rate; Year 2+ is the greater of the Year-2 floor percentage of the Year-1 platform fee, or your
+            actual user count in that year times the same per-user rate — so pricing follows usage in both directions
+            (2026-07-07 per-user methodology; the old per-tier overage rate is retained for history only and is no
+            longer read).
           </p>
         </div>
         <div>

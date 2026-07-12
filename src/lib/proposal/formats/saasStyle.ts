@@ -1,12 +1,23 @@
-// "SaaS-style": subscription framing — platform fee / implementation /
-// committed base / overage up front, then what's included, then an annual
-// cost table (no TCO column; this format is about the recurring rhythm, not
-// a lump-sum horizon).
+// "SaaS-style": subscription framing — committed base / per-user rate /
+// Year-1 total / the Year-2+ rule up front, then what's included, then an
+// annual cost table (no TCO column; this format is about the recurring
+// rhythm, not a lump-sum horizon). Per-user methodology decided on the Vi -
+// Documentation leadership call, 2026-07-07 (Olivia Mukhopadhyay).
 import type { ClientSafeProposal } from '../clientSafe'
 import { narrativeSections } from '../narrative'
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
-import { discountTotalRows, findLine, formatINR, netYearsOf, overageNote, traceValue, whatYouGetBullets } from './shared'
+import {
+  CONSENT_MODIFICATION_CAVEAT,
+  discountTotalRows,
+  findLine,
+  formatINR,
+  formatPerUserRate,
+  netYearsOf,
+  traceValue,
+  whatYouGetBullets,
+  year2RuleNote,
+} from './shared'
 import type { ProposalRenderModel, RenderTable } from './types'
 
 const TITLE = 'Your Subscription'
@@ -22,12 +33,15 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
   // line's own recurring/one-time figures so the section still renders.
   const platformFee = traceValue(result.trace, 'Platform fee (annual)') ?? cm.recurring_inr
   const implementation = traceValue(result.trace, 'Implementation (one-time)') ?? cm.one_time_inr
+  const perUserRate = result.saas_per_user_rate
 
   const subscriptionParagraphs = [
-    `Platform fee: ${formatINR(platformFee)} / year`,
-    `Implementation (one-time): ${formatINR(implementation)}`,
     `Committed base: ${p.inputs.dp_base_y1.toLocaleString('en-IN')} data principals`,
-    overageNote(result.trace, p.inputs.dp_base_y1, p.inputs.dp_base_y2),
+    ...(perUserRate !== undefined ? [`Per-user rate: ${formatPerUserRate(perUserRate)} per user per year`] : []),
+    `Platform fee (annual): ${formatINR(platformFee)}`,
+    `Implementation (one-time): ${formatINR(implementation)}`,
+    `Year 1 total: ${formatINR(cm.year1_inr)}`,
+    year2RuleNote(result.trace),
   ]
 
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`)]
@@ -51,7 +65,11 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     cover: buildCover(p, asOfDate, TITLE),
     sections: [
       ...narrativeSections(p),
-      { heading: 'Your Subscription', paragraphs: subscriptionParagraphs },
+      {
+        heading: 'Your Subscription',
+        paragraphs: subscriptionParagraphs,
+        ...(perUserRate !== undefined ? { bullets: [CONSENT_MODIFICATION_CAVEAT] } : {}),
+      },
       { heading: "What's Included", bullets: whatYouGetBullets() },
       { heading: `Annual Cost Over ${years} Years`, table },
       buildInclusionsExclusionsSection(p),

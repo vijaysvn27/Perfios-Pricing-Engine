@@ -17,6 +17,8 @@ interface CmPrice {
   one_time: number
   year1: number
   recurring: number
+  /** (licence + infra) ÷ committed users, unrounded. Only set for saas/hybrid CM. */
+  per_user_rate?: number
 }
 
 function pickByCap<T>(items: T[], cap: (t: T) => number, value: number): T {
@@ -39,6 +41,15 @@ function priceCmOnPrem(card: RateCard, base: number, trace: TraceStep[]): CmPric
   return { one_time: licence + deploy, year1: licence + deploy + support, recurring: support }
 }
 
+/**
+ * SaaS / Hybrid CM (2026-07-07 per-user methodology, decided on the Vi -
+ * Documentation leadership call — see docs/superpowers/specs/2026-07-12-
+ * proposal-builder-revamp-design.md §6 amendment). The old per-tier
+ * `overage_inr_per_user` column is superseded and is no longer read here:
+ * Year 2+ now follows the committed-base-derived per-user rate in both
+ * directions (more users → more billed; fewer users → less, floored at
+ * y2_floor_pct of the Year-1 platform fee).
+ */
 function priceCmSaas(card: RateCard, baseY1: number, baseY2: number, trace: TraceStep[]): CmPrice {
   const s = card.saas_cm
   const tier = pickByCap(s.tiers, (t) => t.user_cap, baseY1)
@@ -47,17 +58,21 @@ function priceCmSaas(card: RateCard, baseY1: number, baseY2: number, trace: Trac
   const licence = s.annual_licence_inr
   const impl = r(licence * s.implementation_pct)
   const platform = licence + infra
-  const overage = r(Math.max(0, baseY2 - baseY1) * tier.overage_inr_per_user)
-  const recurring = Math.max(r(s.y2_floor_pct * platform), platform + overage)
+  // Kept unrounded internally (display layers round to 2dp for "₹X.XX/user/year").
+  const perUserRate = baseY1 > 0 ? platform / baseY1 : 0
+  const usage = r(baseY2 * perUserRate)
+  const floor = r(s.y2_floor_pct * platform)
+  const recurring = Math.max(floor, usage)
   trace.push(
     { label: 'SaaS tier', formula: `committed base ${inr(baseY1)} ≤ ${tier.label} cap ${inr(tier.user_cap)} → tier ${tier.label} (${s.infra_basis})`, result: usdMo },
     { label: 'Hosting infra (annual)', formula: `$${usdMo}/mo × 12 × ₹${s.fx_inr_per_usd}/USD × (1 + ${s.sgna_uplift_pct * 100}% SG&A)`, result: infra },
     { label: 'Platform fee (annual)', formula: `licence ₹${inr(licence)} + infra ₹${inr(infra)}`, result: platform },
     { label: 'Implementation (one-time)', formula: `${s.implementation_pct * 100}% × licence ₹${inr(licence)}`, result: impl },
-    { label: 'Overage (Year 2+)', formula: `max(0, ${inr(baseY2)} − ${inr(baseY1)}) × ₹${tier.overage_inr_per_user}/user`, result: overage },
-    { label: 'Year 2+ (with floor)', formula: `max(${s.y2_floor_pct * 100}% × platform, platform + overage)`, result: recurring },
+    { label: 'Per-user rate', formula: `(licence ₹${inr(licence)} + infra ₹${inr(infra)}) ÷ ${inr(baseY1)} committed users = ₹${perUserRate.toFixed(2)}/user/year`, result: perUserRate },
+    { label: 'Year 2+ usage', formula: `${inr(baseY2)} users × ₹${perUserRate.toFixed(2)}/user`, result: usage },
+    { label: `Year 2+ (with ${s.y2_floor_pct * 100}% floor)`, formula: `max(${s.y2_floor_pct * 100}% × platform ₹${inr(platform)} = ₹${inr(floor)}, usage ₹${inr(usage)})`, result: recurring },
   )
-  return { one_time: impl, year1: impl + platform, recurring }
+  return { one_time: impl, year1: impl + platform, recurring, per_user_rate: perUserRate }
 }
 
 interface EstateBases {
@@ -184,6 +199,7 @@ export function price(card: RateCard, inputs: DealInputs): ModeResult {
     total_tco_inr,
     net_total_tco_inr,
     net_total_year1_inr,
+    saas_per_user_rate: cm.per_user_rate,
     trace,
   }
 }

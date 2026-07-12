@@ -92,7 +92,7 @@ export function buildNarrative(p: ClientSafeProposal): Narrative {
 
   const why_perfios = [
     'Consent notices and DP-facing surfaces in 22 Indian languages, including audio readout for accessibility.',
-    'Unlimited consents and actions per data principal — no per-transaction metering or surprise overage on usage.',
+    'Unlimited consents and actions per data principal — no per-transaction metering, and SaaS/Hybrid pricing follows your user count via a transparent, published-in-advance per-user rate.',
     'Seven Consent Manager modules bundled as one platform: notice, rights portal, cookie consent, governance, breach, vendor, and DPIA.',
     'Evidence-grade audit trails — every consent, access, and grievance event is versioned and exportable for regulatory review.',
     'RPO under 15 minutes with cold-DR across every tier, so your consent records survive a site failure.',

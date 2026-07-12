@@ -1,7 +1,7 @@
 import type { RateCard, SaasInfraBasis, SaasTier } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
-import { basisSwitchPreview, tierDescription, type UpdateCard } from './helpers'
+import { SAAS_PRICING_EXPLAINER, basisSwitchPreview, tierDescription, type UpdateCard } from './helpers'
 
 interface Props {
   saas: RateCard['saas_cm']
@@ -68,7 +68,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
               <th className={th}>User cap</th>
               <th className={`${th} ${onpremActive ? activeCol : ''}`}>Infra $/mo (on-prem ref){onpremActive ? ' — ACTIVE' : ''}</th>
               <th className={`${th} ${onpremActive ? '' : activeCol}`}>Infra $/mo (SaaS v3){onpremActive ? '' : ' — ACTIVE'}</th>
-              <th className={th}>Overage ₹/user</th>
+              <th className={`${th} italic text-slate-300`}>Overage ₹/user (legacy — not used)</th>
               <th className={th}>What this drives</th>
             </tr>
           </thead>
@@ -106,12 +106,12 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
                     onChange={(e) => patchTier(i, { infra_usd_mo_saas_v3: toNum(e.target.value) })}
                   />
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-2 py-1.5 opacity-50">
                   <input
                     type="number"
                     min={0}
                     step={1}
-                    className={`${inp} w-20 text-right`}
+                    className={`${inp} w-20 text-right text-slate-400`}
                     value={t.overage_inr_per_user}
                     onChange={(e) => patchTier(i, { overage_inr_per_user: toNum(e.target.value) })}
                   />
@@ -122,6 +122,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
           </tbody>
         </table>
       </div>
+      <p className="mt-2 text-xs text-slate-500">{SAAS_PRICING_EXPLAINER}</p>
 
       <div className="mt-4 border-t border-slate-100 pt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">

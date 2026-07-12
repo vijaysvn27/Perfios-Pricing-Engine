@@ -15,7 +15,7 @@ import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 const ONPREM_PRICE_DRIVER =
   'Priced on your committed data principal slab. You host the infrastructure, so there is no hosting charge from us.'
 const SAAS_HYBRID_PRICE_DRIVER =
-  'Priced on your committed data principal base with per-user overage. Perfios hosts the platform; the consent governance bridge runs on your premises.'
+  'Priced on your committed data principal base via a per-user rate. Perfios hosts the platform; the consent governance bridge runs on your premises.'
 
 function paymentTermsBullets(validityDays: number): string[] {
   return [

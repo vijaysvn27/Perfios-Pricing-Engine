@@ -42,24 +42,35 @@ export function traceFormula(trace: TraceStep[], label: string): string | undefi
 }
 
 /**
- * Overage note for the SaaS/hybrid subscription framing. Prefers the exact
- * per-user rate recorded in the trace ("Overage (Year 2+)" step, e.g.
- * "max(0, 30,00,000 − 25,00,000) × ₹3/user"); falls back to a description
- * built from the deal inputs alone when no such trace step exists (e.g. the
- * priced mode is on-prem, which has no overage concept).
+ * Per-user rate, formatted for client copy: "₹2.36 per user per year".
+ * `saas_per_user_rate` is unrounded internally (ModeResult.saas_per_user_rate);
+ * this is the one place that rounds it for display.
  */
-export function overageNote(trace: TraceStep[], dpBaseY1: number, dpBaseY2: number): string {
-  const formula = traceFormula(trace, 'Overage (Year 2+)')
-  const match = formula?.match(/₹(\d+(?:\.\d+)?)\/user/)
-  if (match) {
-    return `Overage beyond your committed base is billed at ₹${match[1]}/user, from Year 2 onward.`
-  }
-  const growth = Math.max(0, dpBaseY2 - dpBaseY1)
-  if (growth > 0) {
-    return `Your Year 2 base of ${dpBaseY2.toLocaleString('en-IN')} exceeds the committed ${dpBaseY1.toLocaleString('en-IN')} by ${growth.toLocaleString('en-IN')}; overage terms apply from Year 2.`
-  }
-  return `Committed base: ${dpBaseY1.toLocaleString('en-IN')}. No overage while usage stays within the committed base.`
+export function formatPerUserRate(rate: number): string {
+  return `₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
+
+/**
+ * Year-2+ rule sentence for the SaaS/hybrid per-user model (2026-07-07
+ * methodology, superseding the old per-tier overage note): the greater of
+ * the Year-2 floor percentage of the Year-1 platform fee, or actual users
+ * × the same per-user rate. Reads the floor percentage out of the trace
+ * (the `Year 2+ (with N% floor)` step engine2 always pushes for saas/hybrid)
+ * so this stays consistent with whatever the rate card currently publishes;
+ * falls back to 30% — the seeded default — if that step is absent (e.g. an
+ * on-prem result, which has no Year-2+ floor concept).
+ */
+export function year2RuleNote(trace: TraceStep[]): string {
+  const step = trace.find((s) => /^Year 2\+ \(with .+ floor\)$/.test(s.label))
+  const pct = step?.label.match(/([\d.]+)%/)?.[1] ?? '30'
+  return `From Year 2 onward, your annual fee is the greater of ${pct}% of the Year-1 platform fee, or your actual user count × the same per-user rate.`
+}
+
+/** Client caveat required alongside every SaaS/hybrid per-user quote (Vi
+ * documentation call, 2026-07-07): consent modifications by existing data
+ * principals never inflate the billed user count. */
+export const CONSENT_MODIFICATION_CAVEAT =
+  'Existing data principals who modify, renew, or revoke consent in later years are not counted as new users — they stay covered under your committed base. Only net-new data principals count toward your user count.'
 
 export function findLine(result: ModeResult, key: ComponentLine['component_key']): ComponentLine {
   const line = result.lines.find((l) => l.component_key === key)

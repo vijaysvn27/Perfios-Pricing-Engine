@@ -91,8 +91,14 @@ export function slabDescription(label: string): string {
 }
 
 export function tierDescription(label: string): string {
-  return `Applies while the committed user base fits this cap — sets the hosting infra cost and the ₹/user overage for the ${label} tier.`
+  return `Applies while the committed user base fits this cap — sets the hosting infra cost that feeds the per-user rate for the ${label} tier.`
 }
+
+/** Explainer line shown under the SaaS CM tier table (2026-07-07 per-user
+ * methodology): the per-user derivation plus the Year-2+ rule, in one
+ * sentence so admins see the model without opening the trace. */
+export const SAAS_PRICING_EXPLAINER =
+  'SaaS pricing is per-user: (licence + infra) ÷ committed users; Year 2+ = greater of 30% of Year-1 platform fee or actual users × rate.'
 
 const ESTATE_RATE_DESCRIPTIONS: Record<string, string> = {
   database: 'Each discovered database adds to the shared estate base (charged once across DSPM/DAM).',

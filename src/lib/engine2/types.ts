@@ -22,6 +22,12 @@ export interface SaasTier {
   infra_usd_mo_onprem_ref: number
   /** Consentick Summary "SaaS v3 ($/mo)" column. */
   infra_usd_mo_saas_v3: number
+  /**
+   * SUPERSEDED (2026-07-07 per-user methodology) — retained for history,
+   * not read by the engine. Year 2+ is now max(30% of Year-1 platform fee,
+   * committed-base-derived per-user rate × actual users); see
+   * priceCmSaas in engine2.ts and the design-doc amendment under §6.
+   */
   overage_inr_per_user: number
 }
 
@@ -98,5 +104,12 @@ export interface ModeResult {
   total_tco_inr: number
   net_total_tco_inr: number // == total when discount_pct = 0
   net_total_year1_inr: number
+  /**
+   * (licence + infra) ÷ committed users (dp_base_y1), unrounded. Set for
+   * saas/hybrid (per-user 2026-07-07 methodology); undefined for onprem,
+   * which has no per-user concept. Exposed here so formats can render it
+   * without re-deriving from the trace.
+   */
+  saas_per_user_rate?: number
   trace: TraceStep[]
 }

@@ -26,7 +26,7 @@ const onpremInputs: DealInputs = {
 const saasInputs: DealInputs = {
   ...onpremInputs,
   deployment_mode: 'saas',
-  dp_base_y2: 3_000_000, // triggers the overage trace step
+  dp_base_y2: 3_000_000, // growth beyond the committed base (per-user rate × actual users)
 }
 
 const compareInputs: DealInputs = {
@@ -250,21 +250,41 @@ describe('moduleWise', () => {
 })
 
 describe('saasStyle', () => {
-  it('shows platform-fee subscription framing', () => {
+  it('shows the per-user subscription framing', () => {
     const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
     expect(model.title).toBe('Your Subscription')
     const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
     const text = (subscription?.paragraphs ?? []).join(' ')
-    expect(text).toMatch(/Platform fee: ₹/)
+    expect(text).toMatch(/Platform fee \(annual\): ₹/)
     expect(text).toMatch(/Implementation \(one-time\): ₹/)
     expect(text).toMatch(/Committed base: 25,00,000/)
+    expect(text).toMatch(/Year 1 total: ₹/)
   })
 
-  it('pulls the overage rate from the trace when available', () => {
+  it('states the per-user rate derived from ModeResult.saas_per_user_rate (25L tier: ₹2.36/user/year)', () => {
     const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
     const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
     const text = (subscription?.paragraphs ?? []).join(' ')
-    expect(text).toMatch(/₹3\/user/) // 25L tier overage rate from RATE_CARD_SEED
+    expect(text).toMatch(/Per-user rate: ₹2\.36 per user per year/)
+  })
+
+  it('states the Year 2+ rule (greater of the floor % or actual users × the per-user rate)', () => {
+    const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
+    const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
+    const text = (subscription?.paragraphs ?? []).join(' ')
+    expect(text).toMatch(/greater of 30% of the Year-1 platform fee/)
+    expect(text).toMatch(/actual user count × the same per-user rate/)
+  })
+
+  it('includes the consent-modification caveat: renewing/modifying consent does not add to the user count', () => {
+    const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
+    const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
+    expect(subscription?.bullets?.some((b) => /net-new data principals/.test(b))).toBe(true)
+  })
+
+  it('never mentions overage (word-boundary match, distinct from "coverage")', () => {
+    const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
+    expect(JSON.stringify(model)).not.toMatch(/\boverage\b/i)
   })
 
   it("lists What's Included with the 7 CM modules", () => {

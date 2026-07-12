@@ -27,7 +27,7 @@ interface Props {
 
 const FORMATS: { kind: FormatKind; label: string; hint: string }[] = [
   { kind: 'module_wise', label: 'Module-wise', hint: 'One line per module, Year 1..N + TCO.' },
-  { kind: 'saas_style', label: 'SaaS-style', hint: 'Platform fee + implementation + overage framing.' },
+  { kind: 'saas_style', label: 'SaaS-style', hint: 'Committed base + per-user rate + implementation framing.' },
   { kind: 'perfios', label: 'Perfios format', hint: 'Client Proposal layout (comparison layout in compare mode).' },
 ]
 

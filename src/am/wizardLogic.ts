@@ -203,7 +203,7 @@ export const DP_BASE_Y1_QUESTION: QuestionCopy = {
 
 export const DP_BASE_Y2_QUESTION: QuestionCopy = {
   question: 'How many do you expect by the end of Year 2?',
-  why: 'Growth beyond the committed base drives Year-2 overage on SaaS / Hybrid.',
+  why: 'Drives your Year-2+ bill on SaaS / Hybrid: actual users × the per-user rate, floored by the Year-2 floor percentage.',
 }
 
 const ESTATE_QUESTIONS: Record<string, QuestionCopy> = {
