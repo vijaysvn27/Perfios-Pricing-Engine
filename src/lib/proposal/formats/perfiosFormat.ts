@@ -1,9 +1,14 @@
-// "Perfios format" — the Client Proposal layout: 1. What You Get,
-// 2. Commercial Summary, 3. Scope & Coverage, 4. What Drives Your Price,
-// 5. Payment Terms. In compare mode (3 priced modes) this instead renders
-// the Model Comparison layout: What You Get (all options) + Your Options.
+// "Perfios format" — the Client Proposal layout: leading Executive Summary /
+// Solution Overview / Why Perfios narrative, then 1. What You Get,
+// 2. Commercial Summary, 3. Inclusions & Exclusions, 4. Scope & Coverage,
+// 5. What Drives Your Price, 6. Payment Terms. In compare mode (3 priced
+// modes) this instead renders the Model Comparison layout: narrative +
+// What You Get (all options) + Your Options + Inclusions & Exclusions.
 import type { ClientSafeProposal } from '../clientSafe'
+import { narrativeSections } from '../narrative'
 import type { ComponentLine, DeploymentMode, ModeResult } from '../../engine2/types'
+import { buildCover } from './cover'
+import { buildInclusionsExclusionsSection } from './inclusions'
 import { discountTotalRows, findLine, fmtPct, netYearsOf, whatYouGetBullets } from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
@@ -61,22 +66,26 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
   return { title: 'Commercial Summary (INR, exclusive of taxes)', columns, rows }
 }
 
-function buildSingleMode(p: ClientSafeProposal): ProposalRenderModel {
+function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
   const mode = result.mode
   const driver = mode === 'onprem' ? ONPREM_PRICE_DRIVER : SAAS_HYBRID_PRICE_DRIVER
+  const title = 'Commercial Proposal'
 
   const sections: RenderSection[] = [
+    ...narrativeSections(p),
     { heading: '1. What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
     { heading: '2. Commercial Summary (INR, exclusive of taxes)', table: commercialSummaryTable(p, result) },
-    { heading: '3. Scope & Coverage', table: scopeTable(p) },
-    { heading: '4. What Drives Your Price', paragraphs: [driver] },
-    { heading: '5. Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
+    { ...buildInclusionsExclusionsSection(p), heading: '3. Inclusions & Exclusions' },
+    { heading: '4. Scope & Coverage', table: scopeTable(p) },
+    { heading: '5. What Drives Your Price', paragraphs: [driver] },
+    { heading: '6. Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
   ]
 
   return {
-    title: 'Commercial Proposal',
+    title,
     subtitle: `Prepared for ${p.customer_name} — valid ${p.validity_days} days`,
+    cover: buildCover(p, asOfDate, title),
     sections,
   }
 }
@@ -94,7 +103,7 @@ function moduleRow(
   return [label, cell(results.onprem), cell(results.hybrid), cell(results.saas)]
 }
 
-function buildCompare(p: ClientSafeProposal): ProposalRenderModel {
+function buildCompare(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const onprem = p.results.find((r) => r.mode === 'onprem')
   const hybrid = p.results.find((r) => r.mode === 'hybrid')
   const saas = p.results.find((r) => r.mode === 'saas')
@@ -106,16 +115,25 @@ function buildCompare(p: ClientSafeProposal): ProposalRenderModel {
   const d = p.inputs.discount_pct
 
   const columns = ['Line Item', 'Option A: On-Prem', 'Option B: Hybrid', 'Option C: SaaS']
+  // Dynamic only: CM is always in scope, but DSPM/DAM/Endpoint rows exist
+  // ONLY when the AM selected that module — never for modules that were
+  // never toggled on, regardless of what any single mode's line shows.
   const rows: (string | number)[][] = [
     moduleRow('CM Year 1', 'cm', results, 'year1_inr'),
     moduleRow('CM Annual', 'cm', results, 'recurring_inr'),
-    moduleRow('DSPM Year1', 'dspm', results, 'year1_inr'),
-    moduleRow('DSPM Annual', 'dspm', results, 'recurring_inr'),
-    moduleRow('DAM Year1', 'dam', results, 'year1_inr'),
-    moduleRow('DAM Annual', 'dam', results, 'recurring_inr'),
-    moduleRow('Endpoint Year1', 'endpoint', results, 'year1_inr'),
-    moduleRow('Endpoint Annual', 'endpoint', results, 'recurring_inr'),
   ]
+  if (p.inputs.modules.dspm) {
+    rows.push(moduleRow('DSPM Year1', 'dspm', results, 'year1_inr'))
+    rows.push(moduleRow('DSPM Annual', 'dspm', results, 'recurring_inr'))
+  }
+  if (p.inputs.modules.dam) {
+    rows.push(moduleRow('DAM Year1', 'dam', results, 'year1_inr'))
+    rows.push(moduleRow('DAM Annual', 'dam', results, 'recurring_inr'))
+  }
+  if (p.inputs.modules.endpoint) {
+    rows.push(moduleRow('Endpoint Year1', 'endpoint', results, 'year1_inr'))
+    rows.push(moduleRow('Endpoint Annual', 'endpoint', results, 'recurring_inr'))
+  }
 
   const totalYear1List = [onprem.total_year1_inr, hybrid.total_year1_inr, saas.total_year1_inr]
   const totalYear1Net = totalYear1List.map((v) => Math.round(v * (1 - Math.min(Math.max(d, 0), 1))))
@@ -146,19 +164,23 @@ function buildCompare(p: ClientSafeProposal): ProposalRenderModel {
   rows.push(...compareTotalRows(`${years}-Year TCO`, totalTcoList, totalTcoNet))
 
   const table: RenderTable = { title: 'Your Options', columns, rows }
+  const title = 'Commercial Proposal — Compare Deployment Options'
 
   const sections: RenderSection[] = [
+    ...narrativeSections(p),
     { heading: 'What You Get (all options)', bullets: whatYouGetBullets() },
     { heading: 'Your Options', table },
+    buildInclusionsExclusionsSection(p),
   ]
 
   return {
-    title: 'Commercial Proposal — Compare Deployment Options',
+    title,
     subtitle: `Prepared for ${p.customer_name} — valid ${p.validity_days} days`,
+    cover: buildCover(p, asOfDate, title),
     sections,
   }
 }
 
-export function build(p: ClientSafeProposal): ProposalRenderModel {
-  return p.results.length === 3 ? buildCompare(p) : buildSingleMode(p)
+export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
+  return p.results.length === 3 ? buildCompare(p, asOfDate) : buildSingleMode(p, asOfDate)
 }

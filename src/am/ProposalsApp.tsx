@@ -5,19 +5,22 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   duplicateProposal,
   listProposals,
+  newProposalId,
   removeProposal,
   type ProposalRow,
 } from '../lib/proposal/proposalsRepo'
+import { mergeQuestionnaireInputs, type QuestionnaireImportResult } from '../lib/proposal/questionnaireImport'
 import { formatINR } from '../lib/format'
 import { btn, btnGreen, card, th } from '../admin/styles'
 import ProposalWizard from './ProposalWizard'
-import { MODE_LABELS } from './wizardLogic'
+import QuestionnaireImportButton from './QuestionnaireImportButton'
+import { MODE_LABELS, defaultInputs, emptyTotals } from './wizardLogic'
 
 interface Props {
   instanceId: string
 }
 
-type View = { kind: 'list' } | { kind: 'wizard'; initial: ProposalRow | null }
+type View = { kind: 'list' } | { kind: 'wizard'; initial: ProposalRow | null; initialStep?: number }
 
 function modeLabel(row: ProposalRow): string {
   if (row.inputs.compare_all_modes) return 'Compare'
@@ -68,11 +71,39 @@ export default function ProposalsApp({ instanceId }: Props) {
     }
   }
 
+  /**
+   * Same "new proposal" path as the button below, except the draft starts
+   * from the questionnaire's parsed answers (merged over the usual defaults)
+   * instead of blank. Nothing is persisted yet — the AM still reviews and
+   * saves from inside the wizard, same as any other new proposal.
+   */
+  function handleQuestionnaireImported(result: QuestionnaireImportResult) {
+    const validityDays = 60
+    const now = new Date().toISOString()
+    const row: ProposalRow = {
+      id: newProposalId(),
+      instance_id: instanceId,
+      customer_name: result.customer_name ?? '',
+      channel: 'direct',
+      internal_notes: result.notes.join('\n'),
+      validity_days: validityDays,
+      inputs: mergeQuestionnaireInputs(defaultInputs(validityDays), result.inputs),
+      rate_card_version: 0,
+      totals: emptyTotals(),
+      discount_shown: true,
+      created_at: now,
+      updated_at: now,
+    }
+    // Land on Scope (step 1) so the AM reviews the imported values first.
+    setView({ kind: 'wizard', initial: row, initialStep: 1 })
+  }
+
   if (view.kind === 'wizard') {
     return (
       <ProposalWizard
         instanceId={instanceId}
         initial={view.initial}
+        initialStep={view.initialStep}
         onBack={() => {
           setView({ kind: 'list' })
           void reload()
@@ -86,9 +117,12 @@ export default function ProposalsApp({ instanceId }: Props) {
     <div className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-perfios-blue">Proposals</h1>
-        <button type="button" className={btnGreen} onClick={() => setView({ kind: 'wizard', initial: null })}>
-          + New Proposal
-        </button>
+        <div className="flex items-center gap-2">
+          <QuestionnaireImportButton onImported={handleQuestionnaireImported} disabled={busy} />
+          <button type="button" className={btnGreen} onClick={() => setView({ kind: 'wizard', initial: null })}>
+            + New Proposal
+          </button>
+        </div>
       </div>
 
       {!persisted && (

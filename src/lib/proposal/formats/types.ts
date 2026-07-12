@@ -16,8 +16,26 @@ export interface RenderSection {
   table?: RenderTable
 }
 
+/**
+ * Branded cover data (item 3 of the revamp): every format emits this so the
+ * screen preview and the Excel export can render a consistent header band —
+ * logo, title, customer, date, validity, and a deterministic reference code.
+ * `logo` is a boolean flag (not the asset itself — formats stay asset-free so
+ * lib code never imports binary/image modules); the render layers decide how
+ * to source the actual image.
+ */
+export interface ProposalCover {
+  logo: boolean
+  title: string
+  customer: string
+  date_label: string
+  validity_days: number
+  reference: string
+}
+
 export interface ProposalRenderModel {
   title: string
   subtitle: string
+  cover?: ProposalCover
   sections: RenderSection[]
 }

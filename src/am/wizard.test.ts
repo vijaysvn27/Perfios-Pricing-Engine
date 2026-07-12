@@ -18,6 +18,7 @@ import {
 } from '../lib/proposal/proposalsRepo'
 import {
   applyCommercialCopy,
+  applyNarrativeCopy,
   defaultInputs,
   defaultPaymentTerms,
   fractionToPct,
@@ -151,6 +152,45 @@ describe('applyCommercialCopy', () => {
     applyCommercialCopy(model, 'New terms.', 'Special.')
     expect(model.sections).toHaveLength(2)
     expect(model.sections[1].bullets).toEqual(['old terms'])
+  })
+})
+
+describe('applyNarrativeCopy', () => {
+  const narrativeModel: ProposalRenderModel = {
+    title: 'Commercial Proposal',
+    subtitle: 'Prepared for Acme',
+    sections: [
+      { heading: 'Executive Summary', paragraphs: ['generated exec summary'] },
+      { heading: 'Solution Overview', paragraphs: ['generated solution overview'] },
+      { heading: '1. What You Get', bullets: ['module 1'] },
+    ],
+  }
+
+  it('replaces Executive Summary and Solution Overview when overrides are non-blank', () => {
+    const out = applyNarrativeCopy(narrativeModel, {
+      executive_summary: 'AM-written summary.',
+      solution_overview: 'AM-written overview.',
+    })
+    expect(out.sections[0].paragraphs).toEqual(['AM-written summary.'])
+    expect(out.sections[1].paragraphs).toEqual(['AM-written overview.'])
+    expect(out.sections[2].bullets).toEqual(['module 1']) // untouched
+  })
+
+  it('keeps the generated copy when overrides are blank or omitted', () => {
+    const out = applyNarrativeCopy(narrativeModel, { executive_summary: '   ', solution_overview: '' })
+    expect(out.sections[0].paragraphs).toEqual(['generated exec summary'])
+    expect(out.sections[1].paragraphs).toEqual(['generated solution overview'])
+  })
+
+  it('only replaces the section it has an override for', () => {
+    const out = applyNarrativeCopy(narrativeModel, { executive_summary: 'Only exec changed.' })
+    expect(out.sections[0].paragraphs).toEqual(['Only exec changed.'])
+    expect(out.sections[1].paragraphs).toEqual(['generated solution overview'])
+  })
+
+  it('does not mutate the input model', () => {
+    applyNarrativeCopy(narrativeModel, { executive_summary: 'New.', solution_overview: 'New.' })
+    expect(narrativeModel.sections[0].paragraphs).toEqual(['generated exec summary'])
   })
 })
 

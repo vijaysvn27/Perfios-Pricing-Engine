@@ -15,11 +15,16 @@ import InstancesManager from './InstancesManager'
 import RateCardPage from './RateCardPage'
 import { btn, card, inp } from './styles'
 
-type Tab = 'ratecard' | 'instances' | 'fields' | 'modules' | 'cm' | 'questions' | 'settings' | 'versions'
+type Tab = 'ratecard' | 'instances' | 'legacy'
+type LegacyTab = 'fields' | 'modules' | 'cm' | 'questions' | 'settings' | 'versions'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ratecard', label: 'Rate Card' },
   { id: 'instances', label: 'Instances' },
+  { id: 'legacy', label: 'Legacy (partner calculator)' },
+]
+
+const LEGACY_TABS: { id: LegacyTab; label: string }[] = [
   { id: 'fields', label: 'Fields' },
   { id: 'modules', label: 'Modules' },
   { id: 'cm', label: 'CM Tiers' },
@@ -34,6 +39,7 @@ export default function AdminApp() {
   const [instanceId, setInstanceId] = useState<string | null>(null)
   const [instErr, setInstErr] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('instances')
+  const [legacyTab, setLegacyTab] = useState<LegacyTab>('fields')
   const [refreshKey, setRefreshKey] = useState(0)
 
   const reloadInstances = useCallback(async () => {
@@ -91,7 +97,7 @@ export default function AdminApp() {
             </select>
           </label>
         </div>
-        {tab !== 'instances' && tab !== 'ratecard' && <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>}
+        {tab === 'legacy' && <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>}
       </div>
 
       {d.opError && <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">Save error: {d.opError}</div>}
@@ -121,48 +127,68 @@ export default function AdminApp() {
           liveVersions={liveVersions}
           templateId={templateId}
           selectedInstanceId={instanceId}
-          onSelect={(id) => { setInstanceId(id); setTab('fields') }}
+          onSelect={(id) => { setInstanceId(id); setTab('legacy'); setLegacyTab('fields') }}
           onChanged={() => void reloadInstances()}
         />
-      ) : d.loading || !d.draft || !snapshot || !instanceId ? (
-        <div className="p-8 text-slate-500">Loading {currentInstance?.name ?? 'instance'} draft…</div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
-          <div className={card}>
-            {tab === 'fields' && (
-              <FieldsEditor fields={d.draft.fields} patchField={d.patchField} commitField={d.commitField} addField={d.addField} />
-            )}
-            {tab === 'modules' && (
-              <ModulesEditor modules={d.draft.modules} fields={d.draft.fields} module_fields={d.draft.module_fields} patchModule={d.patchModule} commitModule={d.commitModule} toggleTag={d.toggleTag} />
-            )}
-            {tab === 'cm' && (
-              <CmTiersEditor cm_tiers={d.draft.cm_tiers} patchTier={d.patchTier} commitTier={d.commitTier} addTier={d.addTier} />
-            )}
-            {tab === 'questions' && (
-              <QuestionsEditor
-                fields={d.draft.fields}
-                informational={d.draft.informational_questions}
-                patchField={d.patchField}
-                commitField={d.commitField}
-                patchInfo={d.patchInfo}
-                commitInfo={d.commitInfo}
-                addInfo={d.addInfo}
-                deleteInfo={d.deleteInfo}
-                reorderQuestions={d.reorderQuestions}
-              />
-            )}
-            {tab === 'settings' && (
-              <SettingsEditor settings={d.draft.settings} patchSettings={d.patchSettings} commitSettings={d.commitSettings} />
-            )}
-            {tab === 'versions' && (
-              <VersionHistory instanceId={instanceId} refreshKey={refreshKey} onRolledBack={() => { void d.reload(); afterPublishOrRollback() }} />
-            )}
+        <div>
+          <div className="mb-2 flex gap-1 border-b border-slate-100">
+            {LEGACY_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setLegacyTab(t.id)}
+                className={'px-3 py-1.5 text-xs ' + (legacyTab === t.id ? 'border-b-2 border-perfios-blue font-semibold text-perfios-blue' : 'text-slate-500')}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
+          <p className="mb-3 text-xs text-slate-500">
+            These editors configure the partner share-link calculator only. DPDP Suite proposal pricing is managed in the Rate Card tab.
+          </p>
 
-          <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-            <PreviewPanel snapshot={snapshot} />
-            <ValidationPanel instanceId={instanceId} snapshot={snapshot} errors={errors} onPublished={afterPublishOrRollback} />
-          </aside>
+          {d.loading || !d.draft || !snapshot || !instanceId ? (
+            <div className="p-8 text-slate-500">Loading {currentInstance?.name ?? 'instance'} draft…</div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
+              <div className={card}>
+                {legacyTab === 'fields' && (
+                  <FieldsEditor fields={d.draft.fields} patchField={d.patchField} commitField={d.commitField} addField={d.addField} />
+                )}
+                {legacyTab === 'modules' && (
+                  <ModulesEditor modules={d.draft.modules} fields={d.draft.fields} module_fields={d.draft.module_fields} patchModule={d.patchModule} commitModule={d.commitModule} toggleTag={d.toggleTag} />
+                )}
+                {legacyTab === 'cm' && (
+                  <CmTiersEditor cm_tiers={d.draft.cm_tiers} patchTier={d.patchTier} commitTier={d.commitTier} addTier={d.addTier} />
+                )}
+                {legacyTab === 'questions' && (
+                  <QuestionsEditor
+                    fields={d.draft.fields}
+                    informational={d.draft.informational_questions}
+                    patchField={d.patchField}
+                    commitField={d.commitField}
+                    patchInfo={d.patchInfo}
+                    commitInfo={d.commitInfo}
+                    addInfo={d.addInfo}
+                    deleteInfo={d.deleteInfo}
+                    reorderQuestions={d.reorderQuestions}
+                  />
+                )}
+                {legacyTab === 'settings' && (
+                  <SettingsEditor settings={d.draft.settings} patchSettings={d.patchSettings} commitSettings={d.commitSettings} />
+                )}
+                {legacyTab === 'versions' && (
+                  <VersionHistory instanceId={instanceId} refreshKey={refreshKey} onRolledBack={() => { void d.reload(); afterPublishOrRollback() }} />
+                )}
+              </div>
+
+              <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+                <PreviewPanel snapshot={snapshot} />
+                <ValidationPanel instanceId={instanceId} snapshot={snapshot} errors={errors} onPublished={afterPublishOrRollback} />
+              </aside>
+            </div>
+          )}
         </div>
       )}
     </div>

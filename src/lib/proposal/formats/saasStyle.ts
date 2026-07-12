@@ -3,12 +3,15 @@
 // cost table (no TCO column; this format is about the recurring rhythm, not
 // a lump-sum horizon).
 import type { ClientSafeProposal } from '../clientSafe'
+import { narrativeSections } from '../narrative'
+import { buildCover } from './cover'
+import { buildInclusionsExclusionsSection } from './inclusions'
 import { discountTotalRows, findLine, formatINR, netYearsOf, overageNote, traceValue, whatYouGetBullets } from './shared'
 import type { ProposalRenderModel, RenderTable } from './types'
 
 const TITLE = 'Your Subscription'
 
-export function build(p: ClientSafeProposal): ProposalRenderModel {
+export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
   const cm = findLine(result, 'cm')
   const years = result.total_years_inr.length
@@ -28,6 +31,7 @@ export function build(p: ClientSafeProposal): ProposalRenderModel {
   ]
 
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`)]
+  // Dynamic only: only included component lines render (see moduleWise.ts).
   const rows: (string | number)[][] = result.lines.filter((l) => l.included).map((l) => [l.label, ...l.years_inr])
   const netYears = netYearsOf(result.total_years_inr, d)
   rows.push(
@@ -44,10 +48,13 @@ export function build(p: ClientSafeProposal): ProposalRenderModel {
   return {
     title: TITLE,
     subtitle: `Prepared for ${p.customer_name} — valid ${p.validity_days} days`,
+    cover: buildCover(p, asOfDate, TITLE),
     sections: [
+      ...narrativeSections(p),
       { heading: 'Your Subscription', paragraphs: subscriptionParagraphs },
       { heading: "What's Included", bullets: whatYouGetBullets() },
       { heading: `Annual Cost Over ${years} Years`, table },
+      buildInclusionsExclusionsSection(p),
     ],
   }
 }

@@ -26,6 +26,9 @@ export interface ProposalInputs extends DealInputs {
   compare_all_modes: boolean
   payment_terms: string // newline-separated bullets, prefilled from the spec copy
   special_terms: string
+  /** Narrative overrides; blank/absent means "use the scope-generated copy". */
+  executive_summary_override?: string
+  solution_overview_override?: string
 }
 
 /** Summary numbers snapshot (the `totals` jsonb column) — for the list view

@@ -26,6 +26,8 @@ interface Props {
   onBack: () => void
   /** Called after every successful save so the list can refresh. */
   onSaved: (persisted: boolean) => void
+  /** Step to open on (0-3), e.g. 1 = Scope after a questionnaire import. */
+  initialStep?: number
 }
 
 const STEPS = ['Deal', 'Scope', 'Commercials', 'Present & Export'] as const
@@ -62,13 +64,13 @@ function draftFromRow(row: ProposalRow): ProposalDraft {
   }
 }
 
-export default function ProposalWizard({ instanceId, initial, onBack, onSaved }: Props) {
+export default function ProposalWizard({ instanceId, initial, onBack, onSaved, initialStep }: Props) {
   const [rc, setRc] = useState<PublishedRateCard | null>(null)
   const [rcError, setRcError] = useState<string | null>(null)
   const [draft, setDraft] = useState<ProposalDraft>(() =>
     initial ? draftFromRow(initial) : newDraft(instanceId),
   )
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(() => Math.min(Math.max(initialStep ?? 0, 0), STEPS.length - 1))
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [persisted, setPersisted] = useState<boolean | null>(null)
@@ -195,7 +197,7 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved }:
           {step === 1 && <Step2Scope draft={draft} rateCard={rc.card} updateInputs={updateInputs} />}
           {step === 2 && <Step3Commercials draft={draft} update={update} updateInputs={updateInputs} />}
           {step === 3 && (
-            <Step4Present draft={draft} rateCard={rc.card} onSave={handleSave} saving={saving} />
+            <Step4Present draft={draft} rateCard={rc.card} updateInputs={updateInputs} onSave={handleSave} saving={saving} />
           )}
 
           <div className={`mt-4 flex items-center justify-between ${card}`}>

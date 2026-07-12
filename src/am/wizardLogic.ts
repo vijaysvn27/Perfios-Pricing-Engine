@@ -161,6 +161,31 @@ export function applyCommercialCopy(
   return { ...model, sections }
 }
 
+/**
+ * Layer the AM's edited narrative copy onto a built render model (item 4 —
+ * template narrative): replace the "Executive Summary" / "Solution Overview"
+ * section paragraphs when a non-blank override is supplied, otherwise leave
+ * the template-generated copy in place. Mirrors applyCommercialCopy's
+ * "blank textarea = keep the default" convention.
+ */
+export function applyNarrativeCopy(
+  model: ProposalRenderModel,
+  overrides: { executive_summary?: string; solution_overview?: string },
+): ProposalRenderModel {
+  const execOverride = overrides.executive_summary?.trim()
+  const solutionOverride = overrides.solution_overview?.trim()
+  const sections: RenderSection[] = model.sections.map((s) => {
+    if (execOverride && /^executive summary$/i.test(s.heading)) {
+      return { ...s, paragraphs: [execOverride] }
+    }
+    if (solutionOverride && /^solution overview$/i.test(s.heading)) {
+      return { ...s, paragraphs: [solutionOverride] }
+    }
+    return s
+  })
+  return { ...model, sections }
+}
+
 // ---------------------------------------------------------------------------
 // Question copy — mirrors the finalized DPDP Pricing Questionnaire style:
 // a short question plus a one-line "why we ask" hint, keyed by rate_key.
