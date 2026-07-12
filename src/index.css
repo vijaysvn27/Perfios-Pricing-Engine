@@ -1,8 +1,31 @@
 @import "tailwindcss";
 
 @theme {
+  /* Legacy admin-UI tokens — kept as-is; used throughout src/admin/*. */
   --color-perfios-blue: #1C58A7;
   --color-perfios-green: #37BC8B;
+
+  /* Document design language (client-facing proposal output only) — extracted
+   * from real Perfios deliverables (Avanse Functional Evidence Pack, Vi DPDP
+   * Comprehensive Blueprint, Honda DPDP Pricing SaaS). See
+   * docs/superpowers/specs/2026-07-12-proposal-builder-revamp-design.md §7,
+   * "Document design language". */
+  --color-doc-primary: #003D82; /* headings, wordmark, document table header fills */
+  --color-doc-navy: #1A1A2E; /* high-emphasis titles */
+  --color-doc-body: #222222;
+  --color-doc-secondary-blue: #2E5496;
+  --color-doc-excel-blue: #1C58A7;
+  --color-doc-green-accent: #3E9E6A; /* H2 / tagline / wordmark accent */
+  --color-doc-green-rule: #6FCF97; /* thin accent rules ONLY — never text */
+  --color-doc-excel-total: #37BC8B; /* Excel TOTAL row fill, white bold text */
+  --color-doc-callout-green: #E2EFDA; /* light green callout fill */
+  --color-doc-tint-1: #EEF2F7; /* zebra rows, callout boxes */
+  --color-doc-tint-2: #F4F7FB;
+  --color-doc-tint-3: #F6F9FC;
+  --color-doc-tint-subheader: #EAF1FB; /* Excel subheader */
+  --color-doc-hairline-outer: #C9D4E2; /* outer borders */
+  --color-doc-hairline-inner: #D7DEE8; /* inner borders, header/footer rules */
+  --color-doc-meta: #5B6472; /* muted meta text */
 }
 
 html,

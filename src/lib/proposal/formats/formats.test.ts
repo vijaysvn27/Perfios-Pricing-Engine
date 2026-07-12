@@ -160,7 +160,7 @@ describe('inclusions & exclusions (item 2)', () => {
 describe('perfiosFormat (single mode)', () => {
   const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
 
-  it('has the narrative leading sections followed by the 6 numbered sections', () => {
+  it('has the narrative leading sections, the 6 numbered sections (no Sizing Estimate — CM-only On-Prem), then the certifications and closing sections', () => {
     expect(model.sections.map((s) => s.heading)).toEqual([
       'Executive Summary',
       'Solution Overview',
@@ -171,6 +171,8 @@ describe('perfiosFormat (single mode)', () => {
       '4. Scope & Coverage',
       '5. What Drives Your Price',
       '6. Payment Terms',
+      'Certifications & Delivery Assurance',
+      'One Partner, One Accountable Outcome',
     ])
   })
 
@@ -222,8 +224,80 @@ describe('perfiosFormat (single mode)', () => {
     expect(labels).not.toContain('Endpoint Discovery / DLP')
     expect(scope.rows).toContainEqual(['Infrastructure / hosting', 'Perfios-hosted'])
     expect(JSON.stringify(scope)).not.toContain('Not available')
-    const driver = saasModel.sections.find((s) => s.heading === '5. What Drives Your Price')
+    // Heading number is found by regex, not hardcoded: SaaS mode always carries
+    // a Sizing Estimate section (transparent platform sizing), which shifts
+    // every following numbered heading up by one versus the CM-only On-Prem case.
+    const driver = saasModel.sections.find((s) => /what drives your price/i.test(s.heading))
+    expect(driver?.heading).toBe('6. What Drives Your Price')
     expect(driver?.paragraphs?.[0]).toMatch(/Perfios hosts the platform/)
+  })
+})
+
+describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () => {
+  it('absent for CM-only On-Prem — nothing to size beyond the BOM annexure', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    expect(model.sections.some((s) => /sizing estimate/i.test(s.heading))).toBe(false)
+  })
+
+  it('present when an estate module is selected on On-Prem, pointing to the infra annexure', () => {
+    const model = buildFormat('perfios', clientSafe(compareInputs), FIXED_DATE)
+    const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+    expect(section).toBeDefined()
+    expect(section?.paragraphs?.some((p) => /Infrastructure You Provide/.test(p))).toBe(true)
+  })
+
+  it('present for SaaS even with no estate module selected — transparent platform sizing', () => {
+    const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
+    const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+    expect(section).toBeDefined()
+    const text = (section?.paragraphs ?? []).join(' ')
+    expect(text).toMatch(/Committed base: 25,00,000 data principals/)
+    expect(text).toMatch(/Per-user rate: ₹2\.36 per user per year/)
+    expect(text).toMatch(/greater of 30% of the Year-1 platform fee/) // Year 2+ rule, shared copy
+    expect(text).toMatch(/Perfios-hosted, India region/)
+  })
+
+  it('never appears in compare mode (three simultaneous modes have no single deployment_mode to size)', () => {
+    const model = buildFormat('perfios', compareClientSafe(compareInputs), FIXED_DATE)
+    expect(model.sections.some((s) => /sizing estimate/i.test(s.heading))).toBe(false)
+  })
+
+  it('Estate Considered table: qty x unit rate = annual, override-aware, with a Subtotal row', () => {
+    const proposal: ClientSafeProposal = {
+      ...clientSafe(compareInputs),
+      sizing_lines: [
+        { label: 'Databases', unit: 'per database', qty: 10, unit_rate_inr: 5_000, annual_inr: 50_000 },
+        { label: 'Cloud connectors', unit: 'per connector', qty: 1, unit_rate_inr: 20_000, annual_inr: 20_000 },
+      ],
+    }
+    const model = buildFormat('perfios', proposal, FIXED_DATE)
+    const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+    expect(section?.table?.columns).toEqual(['Driver', 'Count', 'Unit Rate (₹)', 'Annual (₹)'])
+    expect(section?.table?.rows).toContainEqual(['Databases', '10', 5_000, 50_000])
+    expect(section?.table?.rows).toContainEqual(['Cloud connectors', '1', 20_000, 20_000])
+    expect(section?.table?.rows).toContainEqual(['Subtotal', '', '', 70_000])
+  })
+})
+
+describe('boilerplate: certifications disclaimer and closing statement (Perfios format)', () => {
+  it('every Perfios-format build (single and compare) ends with the closing statement, naming the customer', () => {
+    const single = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const compare = buildFormat('perfios', compareClientSafe(compareInputs), FIXED_DATE)
+    for (const model of [single, compare]) {
+      const last = model.sections[model.sections.length - 1]
+      expect(last.heading).toBe('One Partner, One Accountable Outcome')
+      expect(last.paragraphs?.[0]).toContain('Acme Appliances')
+      expect(last.paragraphs?.[0]).toContain('One partner, one accountable outcome')
+    }
+  })
+
+  it('carries the ISO/SOC2/no-DPDP-certification disclaimer, and it never names the data security partner', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const section = model.sections.find((s) => /certifications/i.test(s.heading))
+    expect(section?.paragraphs?.[0]).toMatch(/ISO 27001/)
+    expect(section?.paragraphs?.[0]).toMatch(/SOC 2 Type 2/)
+    expect(section?.paragraphs?.[0]).toMatch(/no certifying body/)
+    expect(scanForBlocklist(section)).toEqual([])
   })
 })
 
@@ -326,7 +400,7 @@ describe('saasStyle', () => {
 describe('perfios compare mode (3 priced modes)', () => {
   const model = buildFormat('perfios', compareClientSafe(compareInputs), FIXED_DATE)
 
-  it('renders narrative + "What You Get (all options)" + "Your Options" + "Inclusions & Exclusions"', () => {
+  it('renders narrative + "What You Get (all options)" + "Your Options" + "Inclusions & Exclusions" + certifications + closing', () => {
     expect(model.sections.map((s) => s.heading)).toEqual([
       'Executive Summary',
       'Solution Overview',
@@ -334,6 +408,8 @@ describe('perfios compare mode (3 priced modes)', () => {
       'What You Get (all options)',
       'Your Options',
       'Inclusions & Exclusions',
+      'Certifications & Delivery Assurance',
+      'One Partner, One Accountable Outcome',
     ])
     const table = tableFromModel(model, (h) => h === 'Your Options')
     expect(table.columns).toEqual(['Line Item', 'Option A: On-Prem', 'Option B: Hybrid', 'Option C: SaaS'])

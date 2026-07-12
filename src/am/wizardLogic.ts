@@ -5,7 +5,7 @@
 
 import { price, priceAllModes } from '../lib/engine2/engine2'
 import type { DealInputs, DeploymentMode, EstateRate, ModeResult, RateCard } from '../lib/engine2/types'
-import type { ProposalRecord } from '../lib/proposal/clientSafe'
+import type { ProposalRecord, SizingLine } from '../lib/proposal/clientSafe'
 import type { ProposalDraft, ProposalInputs, ProposalTotals } from '../lib/proposal/proposalsRepo'
 import type { ProposalRenderModel, RenderSection } from '../lib/proposal/formats'
 
@@ -40,6 +40,39 @@ export function visibleEstateRates(rates: EstateRate[], mode: DeploymentMode, mo
         return modules.endpoint
     }
   })
+}
+
+/**
+ * The effective unit rate for an estate rate on this deal: the deal-specific
+ * override when one is present and non-negative (`estate_rate_overrides`,
+ * set by the AM in Step2Scope for rates flagged provisional), otherwise the
+ * published rate-card price. Mirrors the override precedence engine2 itself
+ * applies when pricing (see engine2.ts's "Rate override" trace step) — kept
+ * here, not imported from engine2, since engine2 files are off-limits and
+ * this is a display-only re-derivation, not a pricing computation.
+ */
+function effectiveEstateRate(rate: EstateRate, overrides?: Record<string, number>): number {
+  const o = overrides?.[rate.rate_key]
+  return o !== undefined && o >= 0 ? o : rate.unit_price_inr
+}
+
+/**
+ * Transparent "Sizing Estimate" rows (Honda "DSPM DAM Sizing" pattern): one
+ * row per NON-ZERO estate quantity of a SELECTED module, override-aware.
+ * Reuses `visibleEstateRates` for the selected-module/bucket filter so this
+ * can never drift from the estate questions the AM was actually shown — SaaS
+ * (CM-only) always yields an empty list, matching `visibleEstateRates`.
+ */
+export function buildSizingLines(card: RateCard, inputs: DealInputs): SizingLine[] {
+  const visible = visibleEstateRates(card.estate.rates, inputs.deployment_mode, inputs.modules)
+  const lines: SizingLine[] = []
+  for (const rate of visible) {
+    const qty = Math.max(0, Math.trunc(inputs.estate_quantities[rate.rate_key] ?? 0))
+    if (qty <= 0) continue
+    const unit_rate_inr = effectiveEstateRate(rate, inputs.estate_rate_overrides)
+    lines.push({ label: rate.label, unit: rate.unit, qty, unit_rate_inr, annual_inr: Math.round(qty * unit_rate_inr) })
+  }
+  return lines
 }
 
 /** BOM annexure rule: On-Prem always; Hybrid only when any estate module is on; SaaS never. */
@@ -131,6 +164,7 @@ export function buildRecord(draft: ProposalDraft, card: RateCard): ProposalRecor
     inputs: draft.inputs,
     results,
     discount_shown: draft.discount_shown,
+    sizing_lines: buildSizingLines(card, draft.inputs),
   }
 }
 

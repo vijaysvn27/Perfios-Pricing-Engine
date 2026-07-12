@@ -288,6 +288,67 @@ is an explicit action showing old vs new.
 AM access: authenticated role (`am`) alongside existing `admin`; existing
 partner token links remain public and unchanged.
 
+### Document design language
+
+Client-facing document output (screen preview, print/PDF, and Excel export)
+follows a palette and typography extracted from real Perfios deliverables,
+not invented: `Avanse_Functional_Evidence_Pack.docx` (cover pattern,
+certifications/annexure disclaimer), `Vi_DPDP_Comprehensive_Blueprint.docx`
+(closing statement, cover reference-code pattern), and
+`Honda_DPDP_Pricing_SaaS.xlsx` (Excel banner/TOTAL-row/callout treatment, the
+"DSPM DAM Sizing" transparent count × rate pattern reused for the Sizing
+Estimate section).
+
+**Palette** (hardcoded, never invented — CSS custom properties in
+`src/index.css` under `--color-doc-*`, kept separate from the legacy
+`--color-perfios-blue`/`--color-perfios-green` tokens used by the internal
+admin UI):
+
+- Primary blue `#003D82` — headings, wordmark, document table header fills.
+- Dark navy `#1A1A2E` — high-emphasis titles; body text `#222222`.
+- Secondary blue `#2E5496`; Excel banner blue `#1C58A7`.
+- Green accents: `#3E9E6A` (H2 / tagline / wordmark accent), `#6FCF97` (thin
+  accent rules only — never text), `#37BC8B` (Excel TOTAL row fill, white
+  bold text), `#E2EFDA` (light green callout fill).
+- Tints: `#EEF2F7` / `#F4F7FB` / `#F6F9FC` (zebra rows, callout boxes),
+  `#EAF1FB` (Excel subheader).
+- Hairlines: `#C9D4E2` (outer borders), `#D7DEE8` (inner borders,
+  header/footer rules). Muted meta text: `#5B6472`.
+
+**Typography:** Arial everywhere in document output (screen, print, Excel) —
+distinct from the app UI's default sans stack. Title 24pt bold; H1 15pt bold
+primary blue with a 0.7pt green-rule bottom accent; H2 12pt bold green
+accent; body 10pt `#222222`; meta/captions 9pt muted grey; footer 7pt.
+
+**Cover:** logo top-left (falls back to a "PERFIOS · DPDP SUITE" text
+wordmark when the asset is unavailable) under a 3pt green accent rule, a
+two-tone title (navy line 1 / primary-blue line 2), a "Prepared for
+{customer}" eyebrow, an italic green tagline, and a prepared-by block with
+date / validity / reference.
+
+**Print header/footer:** fixed-position bands so every printed page repeats
+"Perfios DPDP Suite · {customer}" + the document title (top) and the
+confidentiality line (bottom), both muted grey with a hairline rule. Page
+numbers via CSS counters are unreliable across print engines and are
+deliberately omitted.
+
+**Tables:** solid primary-blue header row, white bold text; zebra data rows
+white/tint; hairline borders; numeric columns right-aligned; key/value tables
+use a 24%/76% narrow-label/wide-value split. Excel mirrors this with banner
+rows, `#EAF1FB` subheaders, `#E2EFDA` green callout rows, `#37BC8B` TOTAL
+rows, and Indian-grouped currency format `'"₹" #,##,##0'`.
+
+**Sizing Estimate section** (Honda "DSPM DAM Sizing" pattern): a transparent
+count × rate breakdown for selected estate modules ("Estate Considered"
+table, override-aware unit rates), SaaS/Hybrid platform sizing (committed
+base, tier, per-user rate, Year-2+ rule), or an On-Prem pointer to the
+"Infrastructure You Provide" annexure — shown only when there is something to
+size (see `src/lib/proposal/formats/sizing.ts`). Present in the Perfios
+format only (module-wise and SaaS-style formats are unaffected), and only
+for single-mode builds — compare mode's three simultaneous deployment modes
+have no one `deployment_mode` to key the platform-sizing/on-prem-pointer
+branch off.
+
 ## 8. Admin Rate Card page
 
 Single page replacing Fields/Modules/CM Tiers/Settings/Questions tabs

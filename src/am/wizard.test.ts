@@ -19,6 +19,8 @@ import {
 import {
   applyCommercialCopy,
   applyNarrativeCopy,
+  buildRecord,
+  buildSizingLines,
   defaultInputs,
   defaultPaymentTerms,
   fractionToPct,
@@ -69,6 +71,71 @@ describe('visibleEstateRates', () => {
   it('all modules on: every rate is visible exactly once', () => {
     const visible = visibleEstateRates(RATES, 'onprem', { dspm: true, dam: true, endpoint: true })
     expect(keysOf(visible)).toEqual(keysOf(RATES))
+  })
+})
+
+describe('buildSizingLines (Sizing Estimate plumbing)', () => {
+  const baseInputs: DealInputs = {
+    deployment_mode: 'onprem',
+    dp_base_y1: 2_500_000,
+    dp_base_y2: 2_500_000,
+    modules: { dspm: true, dam: false, endpoint: false },
+    estate_quantities: { database: 10, cloud_connector: 0, account: 2 },
+    tco_years: 3,
+    discount_pct: 0,
+  }
+
+  it('one line per non-zero quantity of a selected module, at the rate-card unit price', () => {
+    const lines = buildSizingLines(RATE_CARD_SEED, baseInputs)
+    const database = lines.find((l) => l.label === 'Database')
+    const account = lines.find((l) => l.label === 'Account / subscription')
+    expect(database).toEqual({ label: 'Database', unit: 'per database', qty: 10, unit_rate_inr: 1_000, annual_inr: 10_000 })
+    expect(account).toEqual({
+      label: 'Account / subscription',
+      unit: 'per account',
+      qty: 2,
+      unit_rate_inr: 100_000,
+      annual_inr: 200_000,
+    })
+  })
+
+  it('omits zero-quantity rates entirely (cloud_connector was asked but left at 0)', () => {
+    const lines = buildSizingLines(RATE_CARD_SEED, baseInputs)
+    expect(lines.some((l) => l.label === 'Cloud connector')).toBe(false)
+  })
+
+  it('is override-aware: a non-negative estate_rate_overrides entry replaces the rate-card price', () => {
+    const overridden: DealInputs = { ...baseInputs, estate_rate_overrides: { database: 1_500 } }
+    const lines = buildSizingLines(RATE_CARD_SEED, overridden)
+    const database = lines.find((l) => l.label === 'Database')
+    expect(database).toEqual({ label: 'Database', unit: 'per database', qty: 10, unit_rate_inr: 1_500, annual_inr: 15_000 })
+  })
+
+  it('ignores a negative override and falls back to the rate-card price', () => {
+    const overridden: DealInputs = { ...baseInputs, estate_rate_overrides: { database: -1 } }
+    const lines = buildSizingLines(RATE_CARD_SEED, overridden)
+    expect(lines.find((l) => l.label === 'Database')?.unit_rate_inr).toBe(1_000)
+  })
+
+  it('never selected module -> its rates never appear, even with a quantity set', () => {
+    const lines = buildSizingLines(RATE_CARD_SEED, {
+      ...baseInputs,
+      modules: { dspm: true, dam: false, endpoint: false },
+      estate_quantities: { ...baseInputs.estate_quantities, endpoint_device: 50 },
+    })
+    expect(lines.some((l) => l.label === 'Endpoint device')).toBe(false)
+  })
+
+  it('SaaS (CM-only) always yields an empty list, regardless of quantities', () => {
+    const lines = buildSizingLines(RATE_CARD_SEED, { ...baseInputs, deployment_mode: 'saas' })
+    expect(lines).toEqual([])
+  })
+
+  it('buildRecord plumbs sizing_lines onto the ProposalRecord from the draft + rate card', () => {
+    const draft: ProposalDraft = { ...makeDraft('p1', 'Acme'), inputs: { ...defaultInputs(60), ...baseInputs } }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    expect(record.sizing_lines).toEqual(buildSizingLines(RATE_CARD_SEED, baseInputs))
+    expect(record.sizing_lines?.length).toBeGreaterThan(0)
   })
 })
 

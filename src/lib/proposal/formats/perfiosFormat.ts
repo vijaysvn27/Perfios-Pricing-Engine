@@ -9,6 +9,7 @@ import { narrativeSections } from '../narrative'
 import type { ComponentLine, DeploymentMode, ModeResult } from '../../engine2/types'
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
+import { buildSizingSection } from './sizing'
 import { discountTotalRows, findLine, fmtPct, netYearsOf, whatYouGetBullets } from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
@@ -16,6 +17,32 @@ const ONPREM_PRICE_DRIVER =
   'Priced on your committed data principal slab. You host the infrastructure, so there is no hosting charge from us.'
 const SAAS_HYBRID_PRICE_DRIVER =
   'Priced on your committed data principal base via a per-user rate. Perfios hosts the platform; the consent governance bridge runs on your premises.'
+
+/** Cover/annexure disclaimer (adapted from the Avanse Functional Evidence
+ * Pack), unnumbered and identical for every deal — certifications never
+ * change per customer. Deliberately does not name the data security partner
+ * (blocklist-clean by construction, not by luck). */
+const CERTIFICATIONS_SECTION: RenderSection = {
+  heading: 'Certifications & Delivery Assurance',
+  paragraphs: [
+    'Perfios is ISO 27001 certified; SOC 2 Type 2 certification is in process. No DPDP-specific certification is ' +
+      'claimed, as no certifying body for the DPDP Act currently exists in India. Discovery, classification, and ' +
+      'database-activity monitoring capabilities are delivered together with our data security partner.',
+  ],
+}
+
+/** Closing statement (adapted from the Vi DPDP Comprehensive Blueprint),
+ * appended as the final, unnumbered section of every Perfios-format layout. */
+function closingSection(customerName: string): RenderSection {
+  return {
+    heading: 'One Partner, One Accountable Outcome',
+    paragraphs: [
+      'One partner, one accountable outcome. Perfios delivers the platform, the consulting and the integration — ' +
+        `with the SLAs and support to run it. ${customerName} keeps control of its decisions, its UI/UX and its ` +
+        'data; Perfios carries the rest.',
+    ],
+  }
+}
 
 function paymentTermsBullets(validityDays: number): string[] {
   return [
@@ -75,20 +102,39 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
   return { title: 'Commercial Summary (INR, exclusive of taxes)', columns, rows }
 }
 
+/**
+ * Numbers each core section 1..N as it's appended — dynamic, not hardcoded,
+ * so the optional "Sizing Estimate" section (present only when there's
+ * something to size — see sizing.ts) never leaves a numbering gap or forces
+ * every other heading to be re-literaled by hand.
+ */
+function numberedSections(entries: RenderSection[]): RenderSection[] {
+  return entries.map((s, i) => ({ ...s, heading: `${i + 1}. ${s.heading}` }))
+}
+
 function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
   const mode = result.mode
   const driver = mode === 'onprem' ? ONPREM_PRICE_DRIVER : SAAS_HYBRID_PRICE_DRIVER
   const title = 'Commercial Proposal'
 
+  const sizing = buildSizingSection(p, result)
+
+  const core = numberedSections([
+    { heading: 'What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
+    { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialSummaryTable(p, result) },
+    { ...buildInclusionsExclusionsSection(p), heading: 'Inclusions & Exclusions' },
+    { heading: 'Scope & Coverage', table: scopeTable(p) },
+    ...(sizing ? [sizing] : []),
+    { heading: 'What Drives Your Price', paragraphs: [driver] },
+    { heading: 'Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
+  ])
+
   const sections: RenderSection[] = [
     ...narrativeSections(p),
-    { heading: '1. What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
-    { heading: '2. Commercial Summary (INR, exclusive of taxes)', table: commercialSummaryTable(p, result) },
-    { ...buildInclusionsExclusionsSection(p), heading: '3. Inclusions & Exclusions' },
-    { heading: '4. Scope & Coverage', table: scopeTable(p) },
-    { heading: '5. What Drives Your Price', paragraphs: [driver] },
-    { heading: '6. Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
+    ...core,
+    CERTIFICATIONS_SECTION,
+    closingSection(p.customer_name),
   ]
 
   return {
@@ -183,6 +229,8 @@ function buildCompare(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     { heading: 'What You Get (all options)', bullets: whatYouGetBullets() },
     { heading: 'Your Options', table },
     buildInclusionsExclusionsSection(p),
+    CERTIFICATIONS_SECTION,
+    closingSection(p.customer_name),
   ]
 
   return {

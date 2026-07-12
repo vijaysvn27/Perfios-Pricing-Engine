@@ -64,6 +64,8 @@ export function inclusionBullets(p: ClientSafeProposal): string[] {
     'Implementation & deployment — end-to-end setup, configuration, and go-live support.',
     'Support — priority support for the life of the engagement.',
     'Updates — platform and compliance updates at no extra cost.',
+    `Data-blind by design — Perfios holds consent artefacts and proof, not the underlying personal data, which ` +
+      `remains within ${p.customer_name || 'your'} systems.`,
   )
   return bullets
 }

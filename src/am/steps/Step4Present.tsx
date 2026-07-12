@@ -36,13 +36,33 @@ const FORMATS: { kind: FormatKind; label: string; hint: string }[] = [
 // -webkit-print-color-adjust/print-color-adjust keep the brand-blue cover
 // band and table header fills from being stripped by the browser's print
 // pipeline; page-break-inside avoids splitting a table or section across pages.
+//
+// PRINT header/footer (document design language spec): fixed-position bands
+// so every printed page repeats "Perfios DPDP Suite · {customer}" + the doc
+// title (top) and the confidentiality line (bottom) — 7.5pt/7pt, muted grey
+// #5B6472, with a #D7DEE8 hairline. Page numbers via CSS counters are
+// unreliable across print engines, so they're deliberately omitted; the
+// confidentiality line is the only footer content.
 const PRINT_CSS = `
 @media print {
   @page { size: A4; margin: 14mm; }
   body * { visibility: hidden; }
   .print-root, .print-root * { visibility: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .print-root { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; border: none; }
+  .print-root { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 18mm 0 14mm 0; border: none; font-family: Arial, Helvetica, sans-serif; }
   .print-root table, .print-root .proposal-section, .print-root .cover-band { page-break-inside: avoid; }
+  .print-header, .print-footer { display: block; }
+  .print-header {
+    position: fixed; top: 0; left: 14mm; right: 14mm;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 7.5pt; color: #5B6472; border-bottom: 1px solid #D7DEE8; padding-bottom: 3mm;
+  }
+  .print-footer {
+    position: fixed; bottom: 0; left: 14mm; right: 14mm;
+    font-size: 7pt; color: #5B6472; border-top: 1px solid #D7DEE8; padding-top: 2mm;
+  }
+}
+@media screen {
+  .print-header, .print-footer { display: none; }
 }
 `
 
@@ -200,7 +220,14 @@ export default function Step4Present({ draft, rateCard, updateInputs, onSave, sa
       </div>
 
       <div className={`print-root ${card}`}>
+        <div className="print-header">
+          <span>Perfios DPDP Suite &middot; {draft.customer_name || 'the client'}</span>
+          <span>{model.title}</span>
+        </div>
         <RenderModelView model={model} />
+        <div className="print-footer">
+          Private &amp; Confidential — prepared by Perfios for {draft.customer_name || 'the client'}
+        </div>
       </div>
     </div>
   )
