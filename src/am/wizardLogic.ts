@@ -1,0 +1,235 @@
+// Pure, DOM-free logic behind the AM proposal wizard: estate-question
+// visibility, BOM inclusion, filename building, discount unit conversion,
+// default copy, and the record/totals builders. Everything here is unit-
+// tested in src/am/wizard.test.ts; the components stay thin.
+
+import { price, priceAllModes } from '../lib/engine2/engine2'
+import type { DealInputs, DeploymentMode, EstateRate, ModeResult, RateCard } from '../lib/engine2/types'
+import type { ProposalRecord } from '../lib/proposal/clientSafe'
+import type { ProposalDraft, ProposalInputs, ProposalTotals } from '../lib/proposal/proposalsRepo'
+import type { ProposalRenderModel, RenderSection } from '../lib/proposal/formats'
+
+export type ModuleFlags = DealInputs['modules']
+
+export const MODE_LABELS: Record<DeploymentMode, string> = {
+  onprem: 'On-Prem',
+  hybrid: 'Hybrid',
+  saas: 'SaaS',
+}
+
+/** Note shown on module toggles when the deployment mode is SaaS. */
+export const SAAS_MODULE_NOTE = 'Not available on SaaS (CM-only)'
+
+/**
+ * Which estate quantity questions to show (§6 buckets): none on SaaS
+ * (CM-only); the shared bucket whenever DSPM or DAM is on (it is charged
+ * once, to DSPM if selected else DAM); module-specific buckets only when
+ * that module is on.
+ */
+export function visibleEstateRates(rates: EstateRate[], mode: DeploymentMode, modules: ModuleFlags): EstateRate[] {
+  if (mode === 'saas') return []
+  return rates.filter((rate) => {
+    switch (rate.bucket) {
+      case 'shared':
+        return modules.dspm || modules.dam
+      case 'dspm':
+        return modules.dspm
+      case 'dam':
+        return modules.dam
+      case 'endpoint':
+        return modules.endpoint
+    }
+  })
+}
+
+/** BOM annexure rule: On-Prem always; Hybrid only when any estate module is on; SaaS never. */
+export function includeBom(mode: DeploymentMode, modules: ModuleFlags): boolean {
+  if (mode === 'onprem') return true
+  if (mode === 'hybrid') return modules.dspm || modules.dam || modules.endpoint
+  return false
+}
+
+/** `<customer>_Perfios_DPDP_Proposal.xlsx`, safe for a filesystem. */
+export function proposalFilename(customerName: string): string {
+  const cleaned = customerName
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '')
+    .replace(/\s+/g, '_')
+  return `${cleaned || 'Client'}_Perfios_DPDP_Proposal.xlsx`
+}
+
+/** UI shows whole percent (0–100); the engine stores a 0..1 fraction. */
+export function pctToFraction(pct: number): number {
+  if (!Number.isFinite(pct)) return 0
+  return Math.min(Math.max(pct, 0), 100) / 100
+}
+
+export function fractionToPct(fraction: number): number {
+  return Math.round(fraction * 10000) / 100
+}
+
+/** The three standard payment-terms bullets from the spec (Client Proposal sheet). */
+export function defaultPaymentTerms(validityDays: number): string {
+  return [
+    'Year 1: 50 percent on order, balance on production go-live. Year 2 onward: annually in advance.',
+    'One-time charges billed once. Recurring charges renew each year.',
+    `Prices exclusive of applicable taxes. Validity ${validityDays} days.`,
+  ].join('\n')
+}
+
+export function defaultInputs(validityDays: number = 60): ProposalInputs {
+  return {
+    deployment_mode: 'onprem',
+    dp_base_y1: 0,
+    dp_base_y2: 0,
+    modules: { dspm: false, dam: false, endpoint: false },
+    estate_quantities: {},
+    tco_years: 3,
+    discount_pct: 0,
+    compare_all_modes: false,
+    payment_terms: defaultPaymentTerms(validityDays),
+    special_terms: '',
+  }
+}
+
+export function emptyTotals(): ProposalTotals {
+  return {
+    tco_years: 0,
+    total_year1_inr: 0,
+    total_recurring_inr: 0,
+    total_tco_inr: 0,
+    net_total_year1_inr: 0,
+    net_total_tco_inr: 0,
+  }
+}
+
+export function totalsFromResult(result: ModeResult): ProposalTotals {
+  return {
+    tco_years: result.total_years_inr.length,
+    total_year1_inr: result.total_year1_inr,
+    total_recurring_inr: result.total_recurring_inr,
+    total_tco_inr: result.total_tco_inr,
+    net_total_year1_inr: result.net_total_year1_inr,
+    net_total_tco_inr: result.net_total_tco_inr,
+  }
+}
+
+/** Price the draft (all three modes in compare mode) into a full internal record. */
+export function buildRecord(draft: ProposalDraft, card: RateCard): ProposalRecord {
+  const results = draft.inputs.compare_all_modes
+    ? (() => {
+        const all = priceAllModes(card, draft.inputs)
+        return [all.onprem, all.hybrid, all.saas]
+      })()
+    : [price(card, draft.inputs)]
+  return {
+    id: draft.id,
+    customer_name: draft.customer_name,
+    channel: draft.channel,
+    internal_notes: draft.internal_notes,
+    validity_days: draft.validity_days,
+    inputs: draft.inputs,
+    results,
+    discount_shown: draft.discount_shown,
+  }
+}
+
+/**
+ * Layer the AM's edited commercial copy onto a built render model: replace
+ * the bullets of any "Payment Terms" section with the (newline-separated)
+ * textarea content, and append a "Special Terms" section when present.
+ * Pure — the export path re-runs scanForBlocklist on the final model after
+ * this, so AM-typed copy is still blocklist-checked (D5 belt-and-braces).
+ */
+export function applyCommercialCopy(
+  model: ProposalRenderModel,
+  paymentTerms: string,
+  specialTerms: string,
+): ProposalRenderModel {
+  const paymentLines = paymentTerms
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const sections: RenderSection[] = model.sections.map((s) =>
+    paymentLines.length > 0 && /payment terms/i.test(s.heading) ? { ...s, bullets: paymentLines } : s,
+  )
+  const special = specialTerms
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (special.length > 0) sections.push({ heading: 'Special Terms', bullets: special })
+  return { ...model, sections }
+}
+
+// ---------------------------------------------------------------------------
+// Question copy — mirrors the finalized DPDP Pricing Questionnaire style:
+// a short question plus a one-line "why we ask" hint, keyed by rate_key.
+// ---------------------------------------------------------------------------
+
+export interface QuestionCopy {
+  question: string
+  why: string
+}
+
+export const DP_BASE_Y1_QUESTION: QuestionCopy = {
+  question: 'How many data principals (customers) will you manage in Year 1?',
+  why: 'Sets your licence slab (On-Prem) or committed tier (SaaS / Hybrid).',
+}
+
+export const DP_BASE_Y2_QUESTION: QuestionCopy = {
+  question: 'How many do you expect by the end of Year 2?',
+  why: 'Growth beyond the committed base drives Year-2 overage on SaaS / Hybrid.',
+}
+
+const ESTATE_QUESTIONS: Record<string, QuestionCopy> = {
+  database: {
+    question: 'How many databases hold personal data?',
+    why: 'Each database in scope is discovered and scanned.',
+  },
+  cloud_connector: {
+    question: 'How many cloud platforms do we connect to?',
+    why: 'One connector per cloud platform (AWS / Azure / GCP).',
+  },
+  account: {
+    question: 'How many cloud accounts / subscriptions are in scope?',
+    why: 'Accounts set the breadth of cloud-side discovery.',
+  },
+  onprem_connector: {
+    question: 'How many on-prem connectors are needed?',
+    why: 'One per isolated on-prem network segment.',
+  },
+  onprem_dc: {
+    question: 'How many on-prem data centres are in scope?',
+    why: 'Each data centre needs its own collection footprint.',
+  },
+  gdrive_user: {
+    question: 'How many GDrive / OneDrive users?',
+    why: 'Drives the file-store scanning scope for DSPM.',
+  },
+  vm: {
+    question: 'How many virtual machines are in scope?',
+    why: 'VMs holding local data are scanned individually.',
+  },
+  sharepoint_site: {
+    question: 'How many SharePoint sites?',
+    why: 'Each site collection is crawled for personal data.',
+  },
+  dam_dataset: {
+    question: 'How many structured datasets should DAM monitor?',
+    why: 'DAM watches access patterns per structured dataset.',
+  },
+  endpoint_device: {
+    question: 'How many endpoint devices (laptops / desktops)?',
+    why: 'Endpoint discovery / DLP is licensed per device.',
+  },
+}
+
+/** Question + why for an estate rate; generic fallback for admin-added keys. */
+export function estateQuestion(rate: EstateRate): QuestionCopy {
+  return (
+    ESTATE_QUESTIONS[rate.rate_key] ?? {
+      question: `How many — ${rate.label}?`,
+      why: `Priced ${rate.unit}.`,
+    }
+  )
+}

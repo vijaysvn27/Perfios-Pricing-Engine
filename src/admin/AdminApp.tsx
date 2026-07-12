@@ -12,11 +12,13 @@ import VersionHistory from './VersionHistory'
 import PreviewPanel from './PreviewPanel'
 import ValidationPanel from './ValidationPanel'
 import InstancesManager from './InstancesManager'
+import RateCardPage from './RateCardPage'
 import { btn, card, inp } from './styles'
 
-type Tab = 'instances' | 'fields' | 'modules' | 'cm' | 'questions' | 'settings' | 'versions'
+type Tab = 'ratecard' | 'instances' | 'fields' | 'modules' | 'cm' | 'questions' | 'settings' | 'versions'
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'ratecard', label: 'Rate Card' },
   { id: 'instances', label: 'Instances' },
   { id: 'fields', label: 'Fields' },
   { id: 'modules', label: 'Modules' },
@@ -89,7 +91,7 @@ export default function AdminApp() {
             </select>
           </label>
         </div>
-        {tab !== 'instances' && <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>}
+        {tab !== 'instances' && tab !== 'ratecard' && <button type="button" className={btn} onClick={onResetDraft}>Reset draft to live</button>}
       </div>
 
       {d.opError && <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">Save error: {d.opError}</div>}
@@ -107,7 +109,13 @@ export default function AdminApp() {
         ))}
       </div>
 
-      {tab === 'instances' ? (
+      {tab === 'ratecard' ? (
+        instanceId ? (
+          <RateCardPage instanceId={instanceId} />
+        ) : (
+          <div className="p-8 text-slate-500">Loading…</div>
+        )
+      ) : tab === 'instances' ? (
         <InstancesManager
           instances={instances}
           liveVersions={liveVersions}
