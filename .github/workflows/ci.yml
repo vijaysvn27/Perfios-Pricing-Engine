@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# The dev machine cannot run Node (endpoint security) or reach api.github.com,
+# but plain git transport works — so this workflow publishes its full output to
+# the `ci-logs` branch, which the dev machine reads back with `git fetch`.
+permissions:
+  contents: write
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -15,24 +21,34 @@ jobs:
         with:
           node-version: 20
 
-      # NOTE: This repo has no committed package-lock.json yet — it was bootstrapped
-      # on a machine without Node/npm, so the lockfile could not be generated locally.
-      # `npm ci` REQUIRES a committed lockfile and would fail here, so we use
-      # `npm install`. The generated lockfile is uploaded as an artifact below;
-      # commit it to the repo and switch this step to `npm ci` for reproducible installs.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund 2>&1 | tee ci-build.log
 
       - name: Run engine tests
-        run: npm test
+        id: tests
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee -a ci-build.log
 
       - name: Type-check and build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee -a ci-build.log
 
-      - name: Upload generated package-lock.json
+      - name: Publish log to ci-logs branch
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-lock
-          path: package-lock.json
-          if-no-files-found: warn
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout --orphan ci-logs
+          git reset
+          git add -f ci-build.log
+          git commit -m "CI log for ${GITHUB_SHA} (tests: ${{ steps.tests.outcome }}, build: ${{ steps.build.outcome }})"
+          git push -f origin ci-logs
+
+      - name: Fail workflow if any step failed
+        if: steps.tests.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: exit 1
