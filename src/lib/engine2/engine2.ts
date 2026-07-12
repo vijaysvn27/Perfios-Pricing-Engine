@@ -5,6 +5,7 @@ import type {
   ComponentLine,
   DealInputs,
   DeploymentMode,
+  EstateRate,
   ModeResult,
   RateCard,
   TraceStep,
@@ -81,12 +82,32 @@ interface EstateBases {
   endpoint: number
 }
 
+/**
+ * Deal-specific unit price for an estate rate: the override when present and
+ * >= 0, else the rate card's unit_price_inr. When an override differs from
+ * the card rate, pushes a transparent trace step so the AM/client can see
+ * the deal-specific pricing was applied (design doc §deal-level overrides).
+ */
+function effectiveRate(rt: EstateRate, inputs: DealInputs, trace: TraceStep[]): number {
+  const override = inputs.estate_rate_overrides?.[rt.rate_key]
+  if (override === undefined || override < 0) return rt.unit_price_inr
+  if (override !== rt.unit_price_inr) {
+    const unit = rt.unit.replace(/^per\s+/i, '')
+    trace.push({
+      label: 'Rate override',
+      formula: `${rt.label} at ₹${inr(override)}/${unit} (rate card: ₹${inr(rt.unit_price_inr)}) — deal-specific`,
+      result: override,
+    })
+  }
+  return override
+}
+
 function estateBases(card: RateCard, inputs: DealInputs, trace: TraceStep[]): EstateBases {
   const qty = (k: string) => Math.max(0, Math.trunc(inputs.estate_quantities[k] ?? 0))
   const sum = (bucket: string) =>
     card.estate.rates
       .filter((rt) => rt.bucket === bucket)
-      .reduce((acc, rt) => acc + qty(rt.rate_key) * rt.unit_price_inr, 0)
+      .reduce((acc, rt) => acc + qty(rt.rate_key) * effectiveRate(rt, inputs, trace), 0)
 
   const shared = sum('shared')
   const dspmSpecific = sum('dspm')

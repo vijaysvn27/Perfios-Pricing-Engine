@@ -44,6 +44,19 @@ export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
     updateInputs({ estate_quantities: { ...inputs.estate_quantities, [rateKey]: n } })
   }
 
+  /** Deal-specific unit-price override for a provisional rate. Blank clears
+   * the override (falls back to the rate card's unit_price_inr). */
+  function setRateOverride(rateKey: string, value: string) {
+    const trimmed = value.trim()
+    const next = { ...inputs.estate_rate_overrides }
+    if (trimmed === '') {
+      delete next[rateKey]
+    } else {
+      next[rateKey] = Math.max(0, toNum(trimmed))
+    }
+    updateInputs({ estate_rate_overrides: next })
+  }
+
   function toggleModule(key: keyof ModuleFlags) {
     updateInputs({ modules: { ...inputs.modules, [key]: !inputs.modules[key] } })
   }
@@ -168,14 +181,30 @@ export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
                       {q.why} <span className="text-slate-300">·</span> {rate.label}, {rate.unit}
                     </div>
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={inputs.estate_quantities[rate.rate_key] ?? 0}
-                    onChange={(e) => setQty(rate.rate_key, e.target.value)}
-                    className={`w-28 shrink-0 text-right ${inp}`}
-                  />
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={inputs.estate_quantities[rate.rate_key] ?? 0}
+                      onChange={(e) => setQty(rate.rate_key, e.target.value)}
+                      className={`w-28 text-right ${inp}`}
+                    />
+                    {rate.provisional && (
+                      <div className="flex flex-col items-end">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          placeholder={rate.unit_price_inr.toLocaleString('en-IN')}
+                          value={inputs.estate_rate_overrides?.[rate.rate_key] ?? ''}
+                          onChange={(e) => setRateOverride(rate.rate_key, e.target.value)}
+                          className={`w-28 text-right ${inp}`}
+                        />
+                        <span className="mt-0.5 text-[10px] text-slate-400">₹/unit (deal override)</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })}

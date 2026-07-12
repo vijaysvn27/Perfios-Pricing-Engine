@@ -69,6 +69,14 @@ export interface DealInputs {
   modules: { dspm: boolean; dam: boolean; endpoint: boolean }
   /** keyed by EstateRate.rate_key; missing = 0 */
   estate_quantities: Record<string, number>
+  /**
+   * Deal-specific unit-price overrides, keyed by EstateRate.rate_key. When a
+   * key is present and its value is >= 0, the engine uses it instead of the
+   * rate card's unit_price_inr for that rate; missing, undefined, or negative
+   * values fall back to the rate card. Set by the AM (Step2Scope) for rates
+   * flagged provisional; questionnaire import never sets this field.
+   */
+  estate_rate_overrides?: Record<string, number>
   tco_years: 1 | 2 | 3 | 4 | 5
   /** 0..1 discount applied uniformly to every line (list kept alongside net). */
   discount_pct: number

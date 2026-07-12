@@ -134,6 +134,61 @@ describe('Estate modules (Excel parity: Calculator D79–D92)', () => {
   })
 })
 
+describe('estate rate overrides (deal-level endpoint pricing)', () => {
+  const endpointInputs: DealInputs = {
+    ...base,
+    modules: { dspm: false, dam: false, endpoint: true },
+    estate_quantities: { endpoint_device: 100 },
+  }
+
+  it('override honored: endpoint_device at 150 → base = 100 × 150 = 15,000', () => {
+    const res = price(RATE_CARD_SEED, {
+      ...endpointInputs,
+      estate_rate_overrides: { endpoint_device: 150 },
+    })
+    const endpoint = res.lines[3]
+    expect(endpoint.one_time_inr).toBe(2_700) // 15,000 × 0.18
+    expect(endpoint.year1_inr).toBe(19_500) // 15,000 × 1.30
+    expect(endpoint.recurring_inr).toBe(16_800) // 15,000 × 1.12
+  })
+
+  it('absent override falls back to the card rate: base = 100 × 1,600 = 1,60,000', () => {
+    const res = price(RATE_CARD_SEED, endpointInputs)
+    const endpoint = res.lines[3]
+    expect(endpoint.year1_inr).toBe(208_000) // 1,60,000 × 1.30
+    expect(endpoint.recurring_inr).toBe(179_200) // 1,60,000 × 1.12
+  })
+
+  it('negative override is ignored: falls back to the card rate', () => {
+    const res = price(RATE_CARD_SEED, {
+      ...endpointInputs,
+      estate_rate_overrides: { endpoint_device: -1 },
+    })
+    const endpoint = res.lines[3]
+    expect(endpoint.year1_inr).toBe(208_000)
+  })
+
+  it('trace contains the override step: "Rate override: Endpoint device at ₹150/device (rate card: ₹1,600) — deal-specific"', () => {
+    const res = price(RATE_CARD_SEED, {
+      ...endpointInputs,
+      estate_rate_overrides: { endpoint_device: 150 },
+    })
+    const step = res.trace.find((s) => s.label === 'Rate override')
+    expect(step).toBeDefined()
+    expect(`${step?.label}: ${step?.formula}`).toBe(
+      'Rate override: Endpoint device at ₹150/device (rate card: ₹1,600) — deal-specific',
+    )
+    expect(step?.result).toBe(150)
+  })
+
+  it('no trace step when there is no override (or it equals the card rate)', () => {
+    const res = price(RATE_CARD_SEED, endpointInputs)
+    expect(res.trace.some((s) => s.label === 'Rate override')).toBe(false)
+    const same = price(RATE_CARD_SEED, { ...endpointInputs, estate_rate_overrides: { endpoint_device: 1_600 } })
+    expect(same.trace.some((s) => s.label === 'Rate override')).toBe(false)
+  })
+})
+
 describe('totals, discount, compare, trace', () => {
   it('discount produces net alongside untouched list', () => {
     const res = price(RATE_CARD_SEED, { ...base, discount_pct: 0.1 })

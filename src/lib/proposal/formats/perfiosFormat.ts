@@ -25,22 +25,31 @@ function paymentTermsBullets(validityDays: number): string[] {
   ]
 }
 
-function scopeStatus(mode: DeploymentMode, _key: 'dspm' | 'dam' | 'endpoint', enabled: boolean): string {
-  if (mode === 'saas') return 'Not available (SaaS is CM-only)'
-  return enabled ? 'Included' : 'Excluded'
-}
-
+/**
+ * Only selected components get a row — unselected modules are already named
+ * in the Inclusions & Exclusions section, so listing them here again with a
+ * status of their own would be redundant and, on SaaS, actively confusing.
+ * SaaS never has an estate module selected (the wizard disables
+ * those toggles), so this guard should never trip in practice — but if it
+ * ever did, the row is simply omitted rather than printing a stale status.
+ */
 function scopeTable(p: ClientSafeProposal): RenderTable {
-  const mode = p.inputs.deployment_mode
-  const rows: (string | number)[][] = [
-    ['Consent Manager', 'Included'],
-    ['DSPM', scopeStatus(mode, 'dspm', p.inputs.modules.dspm)],
-    ['DAM', scopeStatus(mode, 'dam', p.inputs.modules.dam)],
-    ['Endpoint Discovery / DLP', scopeStatus(mode, 'endpoint', p.inputs.modules.endpoint)],
+  const mode: DeploymentMode = p.inputs.deployment_mode
+  const modules = p.inputs.modules
+  const moduleRows: [boolean, string][] = [
+    [modules.dspm, 'DSPM'],
+    [modules.dam, 'DAM'],
+    [modules.endpoint, 'Endpoint Discovery / DLP'],
+  ]
+  const rows: (string | number)[][] = [['Consent Manager', 'Included']]
+  for (const [selected, label] of moduleRows) {
+    if (selected && mode !== 'saas') rows.push([label, 'Included'])
+  }
+  rows.push(
     ['Infrastructure / hosting', mode === 'onprem' ? 'Client-provided' : 'Perfios-hosted'],
     ['Custom connectors', 'Excluded'],
     ['Applicable taxes', 'Excluded'],
-  ]
+  )
   return { title: 'Scope & Coverage', columns: ['Item', 'Status'], rows }
 }
 
@@ -98,7 +107,10 @@ function moduleRow(
 ): (string | number)[] {
   const cell = (r: ModeResult): string | number => {
     const line = findLine(r, key)
-    return line.included ? line[metric] : 'Not available'
+    // This row only exists because the AM selected the module (see
+    // buildCompare below), so an excluded line here means SaaS genuinely
+    // can't carry it — not that it was never in scope.
+    return line.included ? line[metric] : 'On-Prem / Hybrid only'
   }
   return [label, cell(results.onprem), cell(results.hybrid), cell(results.saas)]
 }

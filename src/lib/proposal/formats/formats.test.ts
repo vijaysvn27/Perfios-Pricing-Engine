@@ -182,13 +182,25 @@ describe('perfiosFormat (single mode)', () => {
     expect(bullets[7]).toBe('Unlimited consents and actions per data principal.')
   })
 
-  it('scope table marks DSPM/DAM/Endpoint Excluded (not selected) and infra Client-provided (on-prem)', () => {
+  it('scope table omits unselected modules entirely and shows infra Client-provided (on-prem)', () => {
     const scope = tableFromModel(model, (h) => h === '4. Scope & Coverage')
     expect(scope.rows).toContainEqual(['Consent Manager', 'Included'])
-    expect(scope.rows).toContainEqual(['DSPM', 'Excluded'])
     expect(scope.rows).toContainEqual(['Infrastructure / hosting', 'Client-provided'])
     expect(scope.rows).toContainEqual(['Custom connectors', 'Excluded'])
     expect(scope.rows).toContainEqual(['Applicable taxes', 'Excluded'])
+    const labels = scope.rows.map((r) => r[0])
+    expect(labels).not.toContain('DSPM')
+    expect(labels).not.toContain('DAM')
+    expect(labels).not.toContain('Endpoint Discovery / DLP')
+  })
+
+  it('scope table lists a selected module as Included (dynamic only)', () => {
+    const selectedModel = buildFormat('perfios', clientSafe(compareInputs), FIXED_DATE)
+    const scope = tableFromModel(selectedModel, (h) => h === '4. Scope & Coverage')
+    expect(scope.rows).toContainEqual(['DSPM', 'Included'])
+    const labels = scope.rows.map((r) => r[0])
+    expect(labels).not.toContain('DAM')
+    expect(labels).not.toContain('Endpoint Discovery / DLP')
   })
 
   it('"What Drives Your Price" uses the on-prem price-driver copy', () => {
@@ -201,11 +213,15 @@ describe('perfiosFormat (single mode)', () => {
     expect(bullets.some((b) => b.includes('Validity 60 days'))).toBe(true)
   })
 
-  it('SaaS mode scope table marks estate modules "Not available (SaaS is CM-only)" and infra Perfios-hosted', () => {
+  it('SaaS mode scope table omits estate modules entirely (never selectable on SaaS) and shows infra Perfios-hosted', () => {
     const saasModel = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
     const scope = tableFromModel(saasModel, (h) => h === '4. Scope & Coverage')
-    expect(scope.rows).toContainEqual(['DSPM', 'Not available (SaaS is CM-only)'])
+    const labels = scope.rows.map((r) => r[0])
+    expect(labels).not.toContain('DSPM')
+    expect(labels).not.toContain('DAM')
+    expect(labels).not.toContain('Endpoint Discovery / DLP')
     expect(scope.rows).toContainEqual(['Infrastructure / hosting', 'Perfios-hosted'])
+    expect(JSON.stringify(scope)).not.toContain('Not available')
     const driver = saasModel.sections.find((s) => s.heading === '5. What Drives Your Price')
     expect(driver?.paragraphs?.[0]).toMatch(/Perfios hosts the platform/)
   })
@@ -323,13 +339,14 @@ describe('perfios compare mode (3 priced modes)', () => {
     expect(table.columns).toEqual(['Line Item', 'Option A: On-Prem', 'Option B: Hybrid', 'Option C: SaaS'])
   })
 
-  it('marks SaaS estate rows "Not available" while on-prem/hybrid show real figures, for the selected module', () => {
+  it('marks the SaaS column "On-Prem / Hybrid only" while on-prem/hybrid show real figures, for the selected module', () => {
     const table = tableFromModel(model, (h) => h === 'Your Options')
     const dspmRow = table.rows.find((r) => r[0] === 'DSPM Year1')
     expect(dspmRow).toBeDefined()
     expect(dspmRow?.[1]).toEqual(expect.any(Number)) // on-prem
     expect(dspmRow?.[2]).toEqual(expect.any(Number)) // hybrid
-    expect(dspmRow?.[3]).toBe('Not available') // SaaS is CM-only
+    expect(dspmRow?.[3]).toBe('On-Prem / Hybrid only') // SaaS is CM-only
+    expect(JSON.stringify(table)).not.toContain('Not available')
   })
 
   it('dynamic only: DAM/Endpoint rows do not exist at all — compareInputs never selected them', () => {
