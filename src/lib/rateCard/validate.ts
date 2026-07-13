@@ -50,8 +50,10 @@ export function validateRateCard(card: RateCard): RateCardError[] {
     seen.add(rt.rate_key)
   })
 
+  // Defensive (old-shape snapshots normalize this in at load, but validation
+  // must never crash on a shape it is meant to be judging).
   const seenUsageKeys = new Set<string>()
-  card.usage_rates.forEach((ur, i) => {
+  ;(card.usage_rates ?? []).forEach((ur, i) => {
     if (ur.unit_price_inr < 0) err(`usage_rates[${i}].unit_price_inr`, `${ur.label || ur.rate_key}: unit price cannot be negative`)
     if (ur.label.trim().length === 0) err(`usage_rates[${i}].label`, `usage_rates[${i}]: label is required`)
     if (seenUsageKeys.has(ur.rate_key)) err(`usage_rates[${i}].rate_key`, `${ur.label || ur.rate_key}: duplicate rate_key "${ur.rate_key}"`)

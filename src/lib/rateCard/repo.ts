@@ -74,6 +74,37 @@ export function nextVersionAfter(maxPublishedVersion: number | null | undefined)
 }
 
 /**
+ * Snapshots saved by OLDER deploys can lack fields added since (usage_rates,
+ * per-tier included_dp, ...). Normalize every snapshot loaded from Supabase
+ * against the seed's shape so the app never crashes on an old-shape row:
+ * missing top-level groups fall back to the seed's, and each tier is layered
+ * over its seed counterpart (matched by tier_key) or given a 60%-of-cap
+ * included_dp default. Exported for tests.
+ */
+export function normalizeRateCard(raw: unknown): RateCard {
+  const partial = (raw ?? {}) as Partial<RateCard>
+  const seed = RATE_CARD_SEED
+  const saas = { ...seed.saas_cm, ...(partial.saas_cm ?? {}) }
+  saas.tiers = (saas.tiers ?? seed.saas_cm.tiers).map((t) => {
+    const seedTier = seed.saas_cm.tiers.find((s) => s.tier_key === t.tier_key)
+    return {
+      ...(seedTier ?? {}),
+      ...t,
+      included_dp:
+        typeof t.included_dp === 'number' && t.included_dp > 0
+          ? t.included_dp
+          : (seedTier?.included_dp ?? Math.round(t.user_cap * 0.6)),
+    }
+  })
+  return {
+    onprem_cm: { ...seed.onprem_cm, ...(partial.onprem_cm ?? {}) },
+    saas_cm: saas,
+    estate: { ...seed.estate, ...(partial.estate ?? {}) },
+    usage_rates: partial.usage_rates ?? seed.usage_rates,
+  }
+}
+
+/**
  * Latest published rate card for an instance. Falls back to RATE_CARD_SEED
  * (version 0, source 'seed') if the table doesn't exist yet or nothing has
  * been published. Never throws for a missing table.
@@ -93,7 +124,7 @@ export async function loadPublishedRateCard(instanceId: string): Promise<Publish
     throw new Error(`loadPublishedRateCard failed: ${error.message}`)
   }
   if (!data) return { card: RATE_CARD_SEED, version: 0, source: 'seed' }
-  return { card: data.snapshot as RateCard, version: data.version, source: 'supabase' }
+  return { card: normalizeRateCard(data.snapshot), version: data.version, source: 'supabase' }
 }
 
 /**
@@ -117,7 +148,7 @@ export async function loadDraft(instanceId: string): Promise<DraftRateCard> {
     }
     throw new Error(`loadDraft failed: ${error.message}`)
   }
-  if (data) return { card: data.snapshot as RateCard, persisted: true }
+  if (data) return { card: normalizeRateCard(data.snapshot), persisted: true }
 
   // No draft row yet: seed one from the latest published card (or the seed)
   // and try to persist it so subsequent edits have somewhere to land.
@@ -212,6 +243,6 @@ export async function rollback(instanceId: string, version: number): Promise<{ v
   if (error) throw new Error(`rollback failed: ${error.message}`)
   if (!data) throw new Error(`rollback failed: version ${version} not found`)
 
-  await saveDraft(instanceId, data.snapshot as RateCard)
+  await saveDraft(instanceId, normalizeRateCard(data.snapshot))
   return publishDraft(instanceId)
 }
