@@ -57,7 +57,12 @@ const GROUP_TITLE: Record<TraceGroup, string> = {
 }
 
 /** "Which bracket does this deal fall into" steps — background context, not a cost line. */
-const REFERENCE_LABELS = new Set(['CM slab', 'SaaS tier', 'Included DP bundle', 'Overage rate'])
+const REFERENCE_LABELS = new Set([
+  'CM slab',
+  'SaaS tier',
+  'Included DP bundle',
+  'Overage rate (billed on actuals, beyond the bundle)',
+])
 
 function classifyStep(label: string): TraceGroup {
   if (REFERENCE_LABELS.has(label)) return 'reference'

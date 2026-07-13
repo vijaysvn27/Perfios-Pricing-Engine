@@ -4,8 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { RATE_CARD_SEED } from '../../lib/engine2/seed'
 import { price } from '../../lib/engine2/engine2'
 import {
-  basisPreview,
-  basisSwitchPreview,
   buildSampleDeal,
   estateRateDescription,
   inputToPct,
@@ -26,54 +24,6 @@ describe('pickSaasTier', () => {
 
   it('falls back to the last tier beyond every cap (catch-all, same as engine2)', () => {
     expect(pickSaasTier(tiers, 99_000_000).tier_key).toBe('100l')
-  })
-})
-
-describe('basisPreview (D1 before/after arithmetic)', () => {
-  it('matches engine2 for the on-prem-ref basis at a 25L deal', () => {
-    const p = basisPreview(RATE_CARD_SEED, 'onprem_ref', 2_500_000)
-    // 3671 × 12 × 83 × 1.2 = 43,87,579.2 → 43,87,579; + 15,00,000 licence
-    expect(p.usd_mo).toBe(3671)
-    expect(p.infra_inr_yr).toBe(4_387_579)
-    expect(p.platform_fee_inr_yr).toBe(5_887_579)
-  })
-
-  it('matches engine2 for the saas_v3 basis at a 25L deal', () => {
-    const p = basisPreview(RATE_CARD_SEED, 'saas_v3', 2_500_000)
-    // 1980 × 12 × 83 × 1.2 = 23,66,496; + 15,00,000 licence
-    expect(p.usd_mo).toBe(1980)
-    expect(p.infra_inr_yr).toBe(2_366_496)
-    expect(p.platform_fee_inr_yr).toBe(3_866_496)
-  })
-
-  it('agrees with price(): platform fee equals SaaS Year-1 minus one-time implementation minus Year-1 overage (bundled-DP model: 25L committed is beyond the 15L bundle, so overage is non-zero)', () => {
-    const deal = buildSampleDeal({
-      dp_base: 2_500_000,
-      deployment_mode: 'saas',
-      dspm: false,
-      dam: false,
-      endpoint: false,
-      quantities: {},
-    })
-    for (const basis of ['onprem_ref', 'saas_v3'] as const) {
-      const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: basis } }
-      const res = price(card, deal)
-      const cm = res.lines[0]
-      const rate = res.saas_per_user_rate as number
-      const included = res.saas_included_dp as number
-      const y1Overage = Math.max(0, deal.dp_base_y1 - included) * rate
-      expect(basisPreview(card, basis, 2_500_000).platform_fee_inr_yr).toBe(cm.year1_inr - cm.one_time_inr - y1Overage)
-    }
-  })
-})
-
-describe('basisSwitchPreview', () => {
-  it('reports both bases, the sample tier and the delta', () => {
-    const p = basisSwitchPreview(RATE_CARD_SEED, 2_500_000)
-    expect(p.tier_label).toBe('25L')
-    expect(p.onprem_ref.platform_fee_inr_yr).toBe(5_887_579)
-    expect(p.saas_v3.platform_fee_inr_yr).toBe(3_866_496)
-    expect(p.delta_inr_yr).toBe(3_866_496 - 5_887_579)
   })
 })
 
@@ -102,40 +52,54 @@ describe('tierDerivedRate (per-tier ₹/DP: ceil(platform ÷ tier user_cap), the
   })
 })
 
-describe('saasVsOnPremYear1 ("SaaS vs On-Prem — Year 1" tuning table)', () => {
-  it('at the seed saas_v3 basis: SaaS Year 1 at each tier cap vs the covering On-Prem slab', () => {
+describe('saasVsOnPremYear1 ("SaaS vs On-Prem — Year 1" tuning table, overage-free quote)', () => {
+  it('at the seed saas_v3 basis: SaaS Year 1 (implementation + platform, no overage) vs the covering On-Prem slab', () => {
     const rows = saasVsOnPremYear1(RATE_CARD_SEED)
     expect(rows).toHaveLength(5)
 
     const byKey = new Map(rows.map((r) => [r.tier_key, r] as const))
     const get = (key: string) => byKey.get(key)!
 
-    // Tier 0: cap 5L, included 3L, rate ₹5 → overage 2L×5=10L; Y1 = 2,25,000 + 22,76,880 + 10,00,000 = 35,01,880
+    // Tier 0: Y1 = 2,25,000 + 22,76,880 = 25,01,880 (no overage in the quote)
     // On-Prem: first slab with cap >= 5,00,000 is Small (licence 20,00,000) → 20,00,000 × 1.48 = 29,60,000
-    expect(get('tier0').saas_year1_at_cap_inr).toBe(3_501_880)
+    expect(get('tier0').saas_year1_at_cap_inr).toBe(2_501_880)
     expect(get('tier0').onprem_year1_inr).toBe(2_960_000)
     expect(get('tier0').onprem_slab_label).toBe('Small')
-    expect(get('tier0').saas_gte_onprem).toBe(true)
+    expect(get('tier0').saas_gte_onprem).toBe(false)
 
-    // 10L: cap 10L, included 6L, rate ₹3 → overage 4L×3=12L; Y1 = 2,25,000 + 26,35,440 + 12,00,000 = 40,60,440
+    // 10L: infra 950*12*83*1.2 = 11,35,440; platform = 15,00,000 + 11,35,440 = 26,35,440; Y1 = 2,25,000 + 26,35,440 = 28,60,440
     // On-Prem: first slab with cap >= 10,00,000 is Mid (licence 30,00,000) → 30,00,000 × 1.48 = 44,40,000
-    expect(get('10l').saas_year1_at_cap_inr).toBe(4_060_440)
+    expect(get('10l').saas_year1_at_cap_inr).toBe(2_860_440)
     expect(get('10l').onprem_year1_inr).toBe(4_440_000)
     expect(get('10l').onprem_slab_label).toBe('Mid')
-    expect(get('10l').saas_gte_onprem).toBe(false) // SaaS undercuts On-Prem at this tier's cap
+    expect(get('10l').saas_gte_onprem).toBe(false)
 
-    // 25L: cap 25L, included 15L, rate ₹2 → overage 10L×2=20L; Y1 = 2,25,000 + 38,66,496 + 20,00,000 = 60,91,496
+    // 25L: Y1 = 2,25,000 + 38,66,496 = 40,91,496 (no overage in the quote)
     // On-Prem: first slab with cap >= 25,00,000 is Mid (cap 25,00,000 exactly) → 44,40,000
-    expect(get('25l').saas_year1_at_cap_inr).toBe(6_091_496)
+    expect(get('25l').saas_year1_at_cap_inr).toBe(4_091_496)
     expect(get('25l').onprem_year1_inr).toBe(4_440_000)
-    expect(get('25l').saas_gte_onprem).toBe(true)
+    expect(get('25l').saas_gte_onprem).toBe(false)
+
+    // 50L: infra 3089*12*83*1.2 = 36,91,972.8 → 36,91,973; platform = 15,00,000 + 36,91,973 = 51,91,973; Y1 = 2,25,000 + 51,91,973 = 54,16,973
+    // On-Prem: first slab with cap >= 50,00,000 is Large (licence 50,00,000) → 50,00,000 × 1.48 = 74,00,000
+    expect(get('50l').saas_year1_at_cap_inr).toBe(5_416_973)
+    expect(get('50l').onprem_year1_inr).toBe(7_400_000)
+    expect(get('50l').onprem_slab_label).toBe('Large')
+    expect(get('50l').saas_gte_onprem).toBe(false)
+
+    // 100L: infra 5385*12*83*1.2 = 64,36,152; platform = 15,00,000 + 64,36,152 = 79,36,152; Y1 = 2,25,000 + 79,36,152 = 81,61,152
+    // On-Prem: first slab with cap >= 1,00,00,000 is Large (cap 1,00,00,000 exactly) → 74,00,000
+    expect(get('100l').saas_year1_at_cap_inr).toBe(8_161_152)
+    expect(get('100l').onprem_year1_inr).toBe(7_400_000)
+    expect(get('100l').onprem_slab_label).toBe('Large')
+    expect(get('100l').saas_gte_onprem).toBe(true)
   })
 
-  it('flags every tier that needs tuning (seed data: only the 10L tier currently undercuts On-Prem)', () => {
+  it('flags every tier that needs tuning (seed data, overage-free quote: only the 100L tier now exceeds On-Prem)', () => {
     const flagged = saasVsOnPremYear1(RATE_CARD_SEED)
       .filter((r) => r.saas_gte_onprem)
       .map((r) => r.tier_key)
-    expect(flagged).toEqual(['tier0', '25l', '50l', '100l'])
+    expect(flagged).toEqual(['100l'])
   })
 })
 
@@ -167,7 +131,7 @@ describe('buildSampleDeal', () => {
     expect(d.tco_years).toBe(5)
   })
 
-  it("WorkedExample's default sample (5,00,000 DP, SaaS, 3yr TCO — the owner's canonical demo case): Y1 35,01,880, Year 2+ 16,83,064 (renewal 6,83,064 + overage 2,00,000 × ₹5 = 10,00,000)", () => {
+  it("WorkedExample's default sample (5,00,000 DP, SaaS, 3yr TCO — the owner's canonical demo case): Y1 25,01,880, Year 2+ 6,83,064 (the overage-free quote — overage no longer appears)", () => {
     const deal = buildSampleDeal({
       dp_base: 500_000,
       deployment_mode: 'saas',
@@ -178,8 +142,8 @@ describe('buildSampleDeal', () => {
     })
     const res = price(RATE_CARD_SEED, deal)
     const cm = res.lines[0]
-    expect(cm.year1_inr).toBe(3_501_880)
-    expect(cm.recurring_inr).toBe(1_683_064)
+    expect(cm.year1_inr).toBe(2_501_880)
+    expect(cm.recurring_inr).toBe(683_064)
   })
 })
 

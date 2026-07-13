@@ -10,9 +10,14 @@ import { importQuestionnaireXlsx, type QuestionnaireImportResult } from '../lib/
 interface Props {
   onImported: (result: QuestionnaireImportResult) => void
   disabled?: boolean
+  /** Smaller footprint for the wizard header — same parse/merge behaviour,
+   * just a lighter-weight button and label ("Import questionnaire" instead
+   * of "New from questionnaire") so it sits comfortably next to the step
+   * pills instead of competing with the list page's primary action. */
+  compact?: boolean
 }
 
-export default function QuestionnaireImportButton({ onImported, disabled }: Props) {
+export default function QuestionnaireImportButton({ onImported, disabled, compact }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,11 +39,15 @@ export default function QuestionnaireImportButton({ onImported, disabled }: Prop
     }
   }
 
+  const buttonClass = compact
+    ? 'rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-perfios-blue hover:text-perfios-blue disabled:cursor-not-allowed disabled:opacity-40'
+    : btn
+
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center gap-2">
-        <button type="button" className={btn} disabled={disabled || busy} onClick={() => inputRef.current?.click()}>
-          {busy ? 'Importing…' : 'New from questionnaire'}
+        <button type="button" className={buttonClass} disabled={disabled || busy} onClick={() => inputRef.current?.click()}>
+          {busy ? 'Importing…' : compact ? 'Import questionnaire' : 'New from questionnaire'}
         </button>
         <input
           ref={inputRef}

@@ -96,6 +96,11 @@ export function normalizeRateCard(raw: unknown): RateCard {
           : (seedTier?.included_dp ?? Math.round(t.user_cap * 0.6)),
     }
   })
+  // 2026-07-13 (owner, second occurrence of the Rs.7 confusion): the infra
+  // basis is HARD-SET to saas_v3 — stored cards that predate the flip are
+  // coerced here, and the admin switch is gone. onprem_ref data is retained
+  // as reference history only.
+  saas.infra_basis = 'saas_v3'
   return {
     onprem_cm: { ...seed.onprem_cm, ...(partial.onprem_cm ?? {}) },
     saas_cm: saas,

@@ -42,6 +42,12 @@ export default function ProposalsApp({ instanceId }: Props) {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<View>({ kind: 'list' })
+  // Account name for the questionnaire download (owner 2026-07-13: the
+  // questionnaire must be traceable to the account it was sent to) — stamps
+  // "Prepared for: {account}" in the workbook and names the download file
+  // "{account}_Perfios_DPDP_Questionnaire.xlsx"; Download stays disabled
+  // until this is non-empty.
+  const [qAccountName, setQAccountName] = useState('')
 
   const reload = useCallback(async () => {
     try {
@@ -119,13 +125,20 @@ export default function ProposalsApp({ instanceId }: Props) {
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-perfios-blue">Proposals</h1>
         <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={qAccountName}
+            onChange={(e) => setQAccountName(e.target.value)}
+            placeholder="Account name"
+            className="w-36 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-perfios-blue focus:outline-none"
+          />
           <button
             type="button"
             className={btn}
-            disabled={busy}
+            disabled={busy || qAccountName.trim() === ''}
             onClick={() =>
               void run(async () => {
-                await downloadQuestionnaireXlsx()
+                await downloadQuestionnaireXlsx(qAccountName.trim())
               })
             }
           >
@@ -138,7 +151,8 @@ export default function ProposalsApp({ instanceId }: Props) {
         </div>
       </div>
       <p className="mb-4 text-right text-xs text-slate-500">
-        Always download the questionnaire from here — it is the current template and imports back automatically.
+        Enter the account name to download the questionnaire — it stamps &ldquo;Prepared for&rdquo; and names the
+        file, and always reflects the current template that imports back automatically.
       </p>
 
       {!persisted && (

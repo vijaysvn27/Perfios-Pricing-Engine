@@ -36,6 +36,22 @@ const FONT_NAME = 'Calibri'
 
 export const QUESTIONNAIRE_FILENAME = 'Perfios_DPDP_Questionnaire.xlsx'
 
+/**
+ * `<account>_Perfios_DPDP_Questionnaire.xlsx`, safe for a filesystem — the
+ * download is account-named (owner 2026-07-13: the questionnaire must be
+ * traceable to the account it was sent to). Falls back to the plain
+ * QUESTIONNAIRE_FILENAME when no account name is given (e.g. programmatic
+ * callers / tests that don't stamp one). Mirrors wizardLogic.proposalFilename's
+ * sanitization, kept duplicated rather than shared since lib code must not
+ * import from src/am.
+ */
+export function questionnaireFilename(customerName?: string): string {
+  const trimmed = customerName?.trim()
+  if (!trimmed) return QUESTIONNAIRE_FILENAME
+  const cleaned = trimmed.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_')
+  return `${cleaned || 'Client'}_Perfios_DPDP_Questionnaire.xlsx`
+}
+
 function colLetterToIndex(letter: string): number {
   return letter.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0) + 1
 }
@@ -185,7 +201,7 @@ export async function downloadQuestionnaireXlsx(customerName?: string): Promise<
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = QUESTIONNAIRE_FILENAME
+  a.download = questionnaireFilename(customerName)
   a.click()
   URL.revokeObjectURL(url)
 }

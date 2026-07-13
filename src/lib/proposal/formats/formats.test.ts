@@ -26,7 +26,10 @@ const onpremInputs: DealInputs = {
 const saasInputs: DealInputs = {
   ...onpremInputs,
   deployment_mode: 'saas',
-  dp_base_y2: 3_000_000, // growth beyond the committed base (per-user rate × actual users)
+  // dp_base_y2 is no longer read by priceCmSaas (owner direction 2026-07-13:
+  // quoted totals are overage-free, so Year 2+ is a flat renewal regardless
+  // of growth) — kept non-equal to dp_base_y1 here only to prove that.
+  dp_base_y2: 3_000_000,
 }
 
 const compareInputs: DealInputs = {
@@ -419,7 +422,6 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
     expect(text).toMatch(/Your Year-1 base: 25,00,000 data principals/)
     expect(text).toMatch(/Included DP bundle: 15,00,000 data principals in the Year-1 platform fee/)
     expect(text).toMatch(/Per-user rate: ₹2 per user per year/)
-    expect(text).toMatch(/Year-1 overage: 10,00,000 data principals beyond the bundle × ₹2 = ₹20,00,000/)
     expect(text).toMatch(/the renewal \(30% of the Year-1 platform fee\)/) // Year 2+ rule, shared copy
     expect(text).toMatch(/Perfios-hosted, India region/)
     // The consent governance bridge sits on the client's premises in EVERY
@@ -613,23 +615,24 @@ describe('moduleWise', () => {
 })
 
 // Fixture math (25L tier, saas_v3 basis, dp_base_y1 2,500,000): platform
-// 3,866,496; included_dp 1,500,000; per-DP overage rate = ceil(platform ÷
-// tier user_cap 2,500,000) = ceil(1.5465984) = ₹2; Y1 overage =
-// (2,500,000 − 1,500,000) × 2 = 2,000,000; implementation = 15% × licence
-// 1,500,000 = 225,000; Year 1 total = 225,000 + 3,866,496 + 2,000,000 =
-// 6,091,496. saasInputs grows dp_base_y2 to 3,000,000: Y2+ overage =
-// (3,000,000 − 1,500,000) × 2 = 3,000,000; renewal = round(30% × platform
-// 3,866,496) = 1,159,949 (owner direction 2026-07-13, CM Calculator call
-// with Rohit: Year 2+ = renewal + overage on actuals, the platform fee no
-// longer recurs in full); Year 2+ total = 1,159,949 + 3,000,000 = 4,159,949.
-// 3-year TCO = 6,091,496 + 2 × 4,159,949 = 14,411,394.
+// 3,866,496; included_dp 1,500,000; per-DP rate = ceil(platform ÷ tier
+// user_cap 2,500,000) = ceil(1.5465984) = ₹2 — published as a rate only (see
+// includedDpNote / Usage-Based Items), never as a row in this table.
+// implementation = 15% × licence 1,500,000 = 225,000. QUOTED totals are
+// overage-free (owner direction 2026-07-13: "One time, implementation + per
+// DP cost. That's all for CM SaaS"): Year 1 = implementation + platform =
+// 225,000 + 3,866,496 = 4,091,496. Year 2+ = renewal = round(30% × platform
+// 3,866,496) = 1,159,949 (dp_base_y2 is no longer read by the engine — see
+// engine2.ts's priceCmSaas, which keeps it in the signature for tier
+// headroom context only). 3-year TCO = 4,091,496 + 2 × 1,159,949 = 6,411,394.
 describe('perfiosFormat subscription table (Commercial Summary, saas/hybrid) — fixes "no commercial table"', () => {
-  it('Platform fee and Implementation are Year-1 only, Overage splits Y1/Y2+, Annual renewal is Year-2+ only, TOTAL matches engine totals', () => {
+  it('Implementation and Platform fee are Year-1 only, Annual renewal is Year-2+ only, no Overage row, TOTAL matches engine totals', () => {
     const result = price(RATE_CARD_SEED, saasInputs)
     const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
     const table = tableFromModel(model, (h) => h === '2. Commercial Summary (INR, exclusive of taxes)')
     expect(table.columns).toEqual(['Component', 'Year 1', 'Year 2', 'Year 3', '3-Year TCO'])
 
+    expect(table.rows).toContainEqual(['Implementation (one-time)', 225_000, '', '', 225_000])
     expect(table.rows).toContainEqual([
       'Platform fee — includes 15,00,000 data principals, all consent actions (grant, revocation, modification, ' +
         'deletion, cookie consent)',
@@ -639,36 +642,33 @@ describe('perfiosFormat subscription table (Commercial Summary, saas/hybrid) —
       3_866_496,
     ])
     expect(table.rows).toContainEqual([
-      'Overage — DPs beyond the bundle × ₹2',
-      2_000_000,
-      3_000_000,
-      3_000_000,
-      2_000_000 + 3_000_000 * 2,
-    ])
-    expect(table.rows).toContainEqual(['Implementation (one-time)', 225_000, '', '', 225_000])
-    expect(table.rows).toContainEqual([
       'Annual renewal — 30% of platform fee',
       '',
       1_159_949,
       1_159_949,
       1_159_949 * 2,
     ])
+    expect(table.rows.some((r) => String(r[0]).includes('Overage —'))).toBe(false)
 
     const totalRow = table.rows.find((r) => r[0] === 'TOTAL')
     expect(totalRow).toEqual(['TOTAL', ...result.total_years_inr, result.total_tco_inr])
-    expect(result.total_years_inr).toEqual([6_091_496, 4_159_949, 4_159_949])
-    expect(result.total_tco_inr).toBe(14_411_394)
+    expect(result.total_years_inr).toEqual([4_091_496, 1_159_949, 1_159_949])
+    expect(result.total_tco_inr).toBe(6_411_394)
   })
 
-  it('the Overage row is omitted entirely for a deal sized within the bundle (no Y1 or Y2+ overage)', () => {
-    // Tier 0 (user_cap 500,000, included_dp 300,000): 200,000 DPs in both
-    // years stays under the bundle in both, so neither overage fires.
-    const withinBundle: DealInputs = { ...saasInputs, dp_base_y1: 200_000, dp_base_y2: 200_000 }
-    const result = price(RATE_CARD_SEED, withinBundle)
+  it('no Overage row ever appears in the commercial table, regardless of how the base compares to the bundle', () => {
+    // Tier 0 (user_cap 500,000, included_dp 300,000): 200,000 DPs is inside
+    // the bundle; ENGINE FACTS tier-0 fixture (platform 2,276,880, rate ₹5,
+    // renewal 683,064) still yields no Overage row either way — overage is
+    // never a row in this table, only a published rate.
+    const tier0: DealInputs = { ...saasInputs, dp_base_y1: 200_000, dp_base_y2: 200_000 }
+    const result = price(RATE_CARD_SEED, tier0)
     expect(result.saas_included_dp).toBe(300_000) // sanity: confirms the tier/bundle picked
-    const model = buildFormat('perfios', clientSafe(withinBundle), FIXED_DATE)
+    expect(result.total_year1_inr).toBe(2_501_880)
+    expect(result.total_recurring_inr).toBe(683_064)
+    const model = buildFormat('perfios', clientSafe(tier0), FIXED_DATE)
     const table = tableFromModel(model, (h) => h === '2. Commercial Summary (INR, exclusive of taxes)')
-    expect(table.rows.some((r) => String(r[0]).startsWith('Overage —'))).toBe(false)
+    expect(table.rows.some((r) => String(r[0]).includes('Overage —'))).toBe(false)
   })
 
   it('Hybrid gets the same subscription table plus estate module lines when selected', () => {

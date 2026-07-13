@@ -118,19 +118,17 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
  * SaaS/Hybrid single-mode Commercial Summary — a proper subscription table
  * (owner complaint: "SaaS proposal has no commercial table"). Every rupee
  * figure is read straight off ModeResult/trace fields the engine already
- * computed — platform fee, Year-1 overage, Year-2+ renewal, Year-2+ overage,
- * implementation (engine2.ts's priceCmSaas pushes exactly these trace
- * steps). The only arithmetic performed here is summing those same sourced
- * figures across the years they actually bill into a per-row TCO. Reflects
- * the 2026-07-13 engine change (CM Calculator call with Rohit): Year 2+ is
- * now the renewal (y2_floor_pct of the Year-1 platform fee) plus overage on
- * actuals — no longer the full platform fee recurring — which is why
- * "Platform fee" is Year-1-only here and a separate "Annual renewal" row
- * carries Year 2..N. The TOTAL row is still sourced straight from the
- * engine's own total_years_inr/total_tco_inr, not from summing these rows,
- * so a future engine change can never silently under- or over-state it.
- * Blank-not-zero (owner: "Fields not included in the pricing should be left
- * empty"): every cell with no charge in a year is the empty string, never 0.
+ * computed — implementation, platform fee, Year-2+ renewal (engine2.ts's
+ * priceCmSaas pushes exactly these trace steps). QUOTED totals are
+ * deliberately overage-free (owner direction 2026-07-13: "One time,
+ * implementation + per DP cost. That's all for CM SaaS") — overage never
+ * appears as a row in this table; it is published only as a rate (see
+ * includedDpNote / usageItemsTable), billed on actuals outside the quote.
+ * The TOTAL row is still sourced straight from the engine's own
+ * total_years_inr/total_tco_inr, not from summing these rows, so a future
+ * engine change can never silently under- or over-state it. Blank-not-zero
+ * (owner: "Fields not included in the pricing should be left empty"): every
+ * cell with no charge in a year is the empty string, never 0.
  */
 function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
   const years = result.total_years_inr.length
@@ -139,17 +137,17 @@ function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTab
   const trace = result.trace
   const platform = traceValue(trace, 'Platform fee (Year 1)') ?? 0
   const implementation = traceValue(trace, 'Implementation (one-time)') ?? 0
-  const y1Overage = traceValue(trace, 'Year 1 overage') ?? 0
-  const y2Overage = traceValue(trace, 'Year 2+ overage (billed on actuals)') ?? 0
   const renewalStep = trace.find((s) => /^Year 2\+ renewal/.test(s.label))
   const renewal = renewalStep?.result ?? 0
   const renewalPctMatch = renewalStep?.label.match(/\(([\d.]+)% of platform\)/)
   const renewalPct = renewalPctMatch ? renewalPctMatch[1] : '30'
   const included = result.saas_included_dp ?? 0
-  const rate = result.saas_per_user_rate ?? 0
   const B = blankIfZero
 
   const rows: (string | number)[][] = []
+
+  // Implementation — one-time, Year 1 only.
+  rows.push(['Implementation (one-time)', B(implementation), ...Array.from({ length: years - 1 }, () => ''), B(implementation)])
 
   // Platform fee — Year 1 only. Includes the tier's bundled DP count and
   // covers every consent action for those data principals; from Year 2 the
@@ -162,23 +160,10 @@ function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTab
     B(platform),
   ])
 
-  // Overage — DPs beyond the bundle, billed on actuals each year — omitted
-  // entirely for a deal sized within the bundle (both Year 1 and Year 2+
-  // overage are zero), rather than printing a row of blanks.
-  if (y1Overage > 0 || y2Overage > 0) {
-    const overageYears = [y1Overage, ...Array.from({ length: years - 1 }, () => y2Overage)]
-    rows.push([
-      `Overage — DPs beyond the bundle × ${formatPerUserRate(rate)}`,
-      ...overageYears.map(B),
-      B(y1Overage + y2Overage * (years - 1)),
-    ])
-  }
-
-  // Implementation — one-time, Year 1 only.
-  rows.push(['Implementation (one-time)', B(implementation), ...Array.from({ length: years - 1 }, () => ''), B(implementation)])
-
   // Annual renewal — Year 2..N only, at the engine's y2_floor_pct of the
-  // Year-1 platform fee (the "renewal, not the full platform fee" change).
+  // Year-1 platform fee. No overage row: overage is a published rate
+  // (includedDpNote / the Usage-Based Items table), never a projected
+  // amount in the quoted commercial table.
   if (years > 1) {
     rows.push([
       `Annual renewal — ${renewalPct}% of platform fee`,

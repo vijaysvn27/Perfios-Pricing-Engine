@@ -78,6 +78,14 @@ describe('normalizeRateCard (old-shape Supabase snapshots must never crash the a
     expect(card.saas_cm.tiers[0].included_dp).toBe(Math.round((card.saas_cm.tiers[0].user_cap * 0.6)))
   })
 
+  it('hard-coerces a stored infra_basis of "onprem_ref" to "saas_v3" (owner\'s "₹7 again" bug, hit twice: the basis choice is abolished, every loaded card must price on saas_v3)', () => {
+    const stored = JSON.parse(JSON.stringify(RATE_CARD_SEED)) as Record<string, unknown>
+    const saas = stored.saas_cm as { infra_basis: string }
+    saas.infra_basis = 'onprem_ref'
+    const card = normalizeRateCard(stored)
+    expect(card.saas_cm.infra_basis).toBe('saas_v3')
+  })
+
   it('handles null/garbage input by returning a seed-shaped card', () => {
     expect(validateRateCard(normalizeRateCard(null))).toEqual([])
     expect(validateRateCard(normalizeRateCard({}))).toEqual([])

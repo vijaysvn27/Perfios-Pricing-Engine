@@ -1,4 +1,5 @@
 import { card } from '../styles'
+import { SAAS_PRICING_EXPLAINER } from './helpers'
 
 /**
  * Group (d): plain-language "How the calculation works" — one short explainer
@@ -22,14 +23,11 @@ export default function ExplainerCard() {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">SaaS / Hybrid</h3>
           <p className="mt-1">
             The DP base picks a tier, whose monthly hosting cost converts to an annual INR figure via FX and the
-            SG&amp;A uplift, and adds to the SaaS licence to form the platform fee. The platform fee includes the
-            tier&apos;s DP bundle (&quot;Included DPs&quot;) — covering all consent actions (grant, revocation,
-            modification, deletion, cookie consent). DPs beyond the bundle are overage, billed on actuals at
-            ceil(platform fee ÷ tier cap) — whole rupees per DP. Year 1 = implementation (one-time, on the licence)
-            + platform fee + overage on the declared Year-1 base beyond the bundle. Year 2 onwards = the Year-2
-            renewal percentage of the platform fee + overage on actual Year-2 DPs beyond the bundle (2026-07-13
-            bundled-DP renewal model, owner direction, confirmed on the CM Calculator call with Rohit; the old
-            per-tier overage rate column is retained for history only and is no longer read).
+            SG&amp;A uplift, and adds to the SaaS licence to form the platform fee. {SAAS_PRICING_EXPLAINER} The
+            derived ₹/DP rate is ceil(platform fee ÷ tier cap) — whole rupees per DP (2026-07-13 owner direction,
+            confirmed on the CM Calculator call with Rohit: &quot;One time, implementation + per DP cost. That&apos;s
+            all for CM SaaS&quot;; the old per-tier overage rate column is retained for history only and is no
+            longer read).
           </p>
         </div>
         <div>

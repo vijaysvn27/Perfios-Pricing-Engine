@@ -11,7 +11,7 @@ import type { ClientSafeProposal } from '../clientSafe'
 import { BOM_NOTES, bomForDpBase } from '../bomData'
 import type { BomRow } from '../bomData'
 import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
-import { blankIfZero, findLine, formatINR, formatPerUserRate, traceValue, year2RuleNote } from './shared'
+import { blankIfZero, findLine, formatPerUserRate, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
 
 // The consent governance bridge sits on the client's premises in EVERY
@@ -58,7 +58,6 @@ function platformSizingParagraphs(p: ClientSafeProposal, result: ModeResult): st
   const perUserRate = result.saas_per_user_rate
   const included = result.saas_included_dp
   const dpY1 = p.inputs.dp_base_y1
-  const y1Overage = traceValue(result.trace, 'Year 1 overage')
   const paragraphs = [
     `Your Year-1 base: ${dpY1.toLocaleString('en-IN')} data principals${tier ? ` (${tier} tier)` : ''}`,
     ...(included !== undefined
@@ -66,12 +65,6 @@ function platformSizingParagraphs(p: ClientSafeProposal, result: ModeResult): st
       : []),
     hostingFootprint(p.inputs.deployment_mode),
     ...(perUserRate !== undefined ? [`Per-user rate: ${formatPerUserRate(perUserRate)} per user per year`] : []),
-    ...(y1Overage !== undefined && y1Overage > 0 && included !== undefined && perUserRate !== undefined
-      ? [
-          `Year-1 overage: ${(dpY1 - included).toLocaleString('en-IN')} data principals beyond the bundle × ` +
-            `${formatPerUserRate(perUserRate)} = ${formatINR(y1Overage)}.`,
-        ]
-      : []),
     year2RuleNote(result.trace),
   ]
   if (p.inputs.deployment_mode === 'hybrid') {

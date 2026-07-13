@@ -4,7 +4,6 @@ import type {
   DealInputs,
   DeploymentMode,
   RateCard,
-  SaasInfraBasis,
   SaasTier,
 } from '../../lib/engine2/types'
 
@@ -34,47 +33,6 @@ export function inputToPct(percent: number): number {
 export function pickSaasTier(tiers: SaasTier[], committedBase: number): SaasTier {
   for (const t of tiers) if (committedBase <= t.user_cap) return t
   return tiers[tiers.length - 1]
-}
-
-export interface BasisPreview {
-  usd_mo: number
-  infra_inr_yr: number
-  platform_fee_inr_yr: number
-}
-
-/**
- * Annual platform fee (licence + hosting infra) for a sample committed DP base
- * under one infra basis — mirrors engine2's priceCmSaas arithmetic exactly so
- * the D1 before/after preview matches what price() will produce.
- */
-export function basisPreview(card: RateCard, basis: SaasInfraBasis, sampleDpBase: number): BasisPreview {
-  const s = card.saas_cm
-  const tier = pickSaasTier(s.tiers, sampleDpBase)
-  const usd_mo = basis === 'onprem_ref' ? tier.infra_usd_mo_onprem_ref : tier.infra_usd_mo_saas_v3
-  const infra_inr_yr = Math.round(usd_mo * 12 * s.fx_inr_per_usd * (1 + s.sgna_uplift_pct))
-  return { usd_mo, infra_inr_yr, platform_fee_inr_yr: s.annual_licence_inr + infra_inr_yr }
-}
-
-export interface BasisSwitchPreview {
-  sample_dp_base: number
-  tier_label: string
-  onprem_ref: BasisPreview
-  saas_v3: BasisPreview
-  /** saas_v3 platform fee minus onprem_ref platform fee (negative = cheaper). */
-  delta_inr_yr: number
-}
-
-/** Before/after platform fee for the D1 basis switch, at a sample deal size. */
-export function basisSwitchPreview(card: RateCard, sampleDpBase: number): BasisSwitchPreview {
-  const onprem_ref = basisPreview(card, 'onprem_ref', sampleDpBase)
-  const saas_v3 = basisPreview(card, 'saas_v3', sampleDpBase)
-  return {
-    sample_dp_base: sampleDpBase,
-    tier_label: pickSaasTier(card.saas_cm.tiers, sampleDpBase).label,
-    onprem_ref,
-    saas_v3,
-    delta_inr_yr: saas_v3.platform_fee_inr_yr - onprem_ref.platform_fee_inr_yr,
-  }
 }
 
 export interface SampleDealConfig {
@@ -109,16 +67,12 @@ export function slabDescription(label: string): string {
   return `Caps the data-principal base for the ${label} band — the first slab whose cap covers the base sets the annual licence.`
 }
 
-export function tierDescription(label: string): string {
-  return `Applies while the committed user base fits this cap — its included-DP bundle and hosting infra set the ₹/DP rate for the ${label} tier.`
-}
-
-/** Explainer line shown under the SaaS CM tier table (bundled-DP renewal
+/** Explainer line shown under the SaaS CM tier table (overage-free quoted
  * model, 2026-07-13 owner direction, confirmed on the CM Calculator call with
- * Rohit): the bundle + overage-rate derivation plus the Year-2+ rule, in the
- * owner's own words, so admins see the model without opening the trace. */
+ * Rohit: "One time, implementation + per DP cost. That's all for CM SaaS"),
+ * so admins see the model without opening the trace. */
 export const SAAS_PRICING_EXPLAINER =
-  "The platform fee includes the tier's DP bundle — covering all consent actions (grant, revocation, modification, deletion, cookie consent). DPs beyond the bundle are charged at the overage rate, billed on actuals. Year 1 = implementation + platform fee (+ overage on the declared base). Year 2 onwards = 30% of the platform fee + overage on actuals."
+  'Year 1 = implementation + platform fee (bundle included, all consent actions). Year 2 onwards = 30% renewal. Overage beyond the bundle billed on actuals at ₹/DP.'
 
 export interface TierDerivedRate {
   infra_inr_yr: number
@@ -147,20 +101,21 @@ export function tierDerivedRate(card: RateCard, tier: SaasTier): TierDerivedRate
 export interface TierYear1Comparison {
   tier_key: string
   tier_label: string
-  /** impl + platform + (cap − included) × rate, at the tier's own user_cap — mirrors priceCmSaas at baseY1 = cap. */
+  /** impl + platform, for the tier — the quote is overage-free (mirrors priceCmSaas). */
   saas_year1_at_cap_inr: number
   onprem_year1_inr: number
   onprem_slab_label: string
-  /** true when SaaS Year 1 at the cap is >= the comparable On-Prem Year 1 (tuning flag: "tune included DPs / licence"). */
+  /** true when SaaS Year 1 is >= the comparable On-Prem Year 1 (tuning flag: "tune the licence / infra"). */
   saas_gte_onprem: boolean
 }
 
 /**
  * "SaaS vs On-Prem — Year 1" tuning surface: for each SaaS tier, prices a
- * client sized exactly at the tier's cap under both SaaS (this tier, with
- * Year-1 overage beyond the bundle) and On-Prem (the first slab whose cap
- * covers the tier cap — same pickByCap rule engine2 uses for slabs), so the
- * commercial team can see where SaaS undercuts On-Prem and where it doesn't.
+ * client sized exactly at the tier's cap under both SaaS (this tier — the
+ * quote is overage-free, 2026-07-13 owner direction) and On-Prem (the first
+ * slab whose cap covers the tier cap — same pickByCap rule engine2 uses for
+ * slabs), so the commercial team can see where SaaS undercuts On-Prem and
+ * where it doesn't.
  */
 export function saasVsOnPremYear1(card: RateCard): TierYear1Comparison[] {
   const { tiers, implementation_pct, annual_licence_inr } = card.saas_cm
@@ -169,8 +124,7 @@ export function saasVsOnPremYear1(card: RateCard): TierYear1Comparison[] {
 
   return tiers.map((t) => {
     const derived = tierDerivedRate(card, t)
-    const overageAtCap = Math.round(Math.max(0, t.user_cap - t.included_dp) * derived.rate_inr_per_dp)
-    const saas_year1_at_cap_inr = impl + derived.platform_fee_inr_yr + overageAtCap
+    const saas_year1_at_cap_inr = impl + derived.platform_fee_inr_yr
 
     const slab = slabs.find((s) => s.dp_cap >= t.user_cap) ?? slabs[slabs.length - 1]
     const onprem_year1_inr = Math.round(slab.annual_licence_inr * (1 + deployment_pct + support_pct))

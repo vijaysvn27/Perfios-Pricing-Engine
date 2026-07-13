@@ -19,13 +19,17 @@ import {
 import {
   applyCommercialCopy,
   applyNarrativeCopy,
+  askedEstateRates,
   buildRecord,
   buildSizingLines,
   defaultInputs,
   defaultPaymentTerms,
   dpBaseY2FromGrowth,
+  estateQuestion,
   fractionToPct,
   growthPctFromBases,
+  hiddenEstateRatesWithValue,
+  HIDDEN_ESTATE_KEYS,
   includeBom,
   pctToFraction,
   proposalFilename,
@@ -73,6 +77,61 @@ describe('visibleEstateRates', () => {
   it('all modules on: every rate is visible exactly once', () => {
     const visible = visibleEstateRates(RATES, 'onprem', { dspm: true, dam: true, endpoint: true })
     expect(keysOf(visible)).toEqual(keysOf(RATES))
+  })
+})
+
+describe('askedEstateRates / hiddenEstateRatesWithValue (fewer wizard questions, owner 2026-07-13)', () => {
+  it('askedEstateRates drops the retired questions (onprem_connector, sharepoint_site, dam_dataset) even when their module is selected', () => {
+    const asked = askedEstateRates(RATES, 'onprem', { dspm: true, dam: true, endpoint: true })
+    for (const key of HIDDEN_ESTATE_KEYS) {
+      expect(asked.some((r) => r.rate_key === key)).toBe(false)
+    }
+    // everything else in scope is still asked
+    expect(asked.some((r) => r.rate_key === 'database')).toBe(true)
+    expect(asked.some((r) => r.rate_key === 'gdrive_user')).toBe(true)
+    expect(asked.some((r) => r.rate_key === 'endpoint_device')).toBe(true)
+  })
+
+  it('askedEstateRates is otherwise identical to visibleEstateRates minus the hidden keys', () => {
+    const modules = { dspm: true, dam: true, endpoint: true }
+    const visible = visibleEstateRates(RATES, 'onprem', modules)
+    const asked = askedEstateRates(RATES, 'onprem', modules)
+    expect(keysOf(asked)).toEqual(
+      keysOf(visible.filter((r) => !HIDDEN_ESTATE_KEYS.includes(r.rate_key))),
+    )
+  })
+
+  it('askedEstateRates: SaaS still asks nothing (CM-only)', () => {
+    expect(askedEstateRates(RATES, 'saas', { dspm: true, dam: true, endpoint: true })).toEqual([])
+  })
+
+  it('hiddenEstateRatesWithValue: empty when every hidden key is zero', () => {
+    const hidden = hiddenEstateRatesWithValue(RATES, 'onprem', { dspm: true, dam: true, endpoint: true }, {})
+    expect(hidden).toEqual([])
+  })
+
+  it('hiddenEstateRatesWithValue: surfaces a hidden key read-only once it carries a non-zero quantity (imported/earlier data)', () => {
+    const modules = { dspm: true, dam: true, endpoint: true }
+    const quantities = { onprem_connector: 2, sharepoint_site: 0, dam_dataset: 5 }
+    const hidden = hiddenEstateRatesWithValue(RATES, 'onprem', modules, quantities)
+    expect(keysOf(hidden)).toEqual(['dam_dataset', 'onprem_connector'])
+  })
+
+  it('hiddenEstateRatesWithValue: a hidden key with a non-zero quantity is NOT surfaced when its module is off (not priced, so nothing to protect)', () => {
+    const hidden = hiddenEstateRatesWithValue(
+      RATES,
+      'onprem',
+      { dspm: false, dam: false, endpoint: false },
+      { onprem_connector: 2, sharepoint_site: 3, dam_dataset: 5 },
+    )
+    expect(hidden).toEqual([])
+  })
+
+  it('gdrive_user question wording merges M365 / Google Workspace (mail, drive, OneDrive, SharePoint)', () => {
+    const gdrive = RATES.find((r) => r.rate_key === 'gdrive_user')
+    expect(gdrive).toBeDefined()
+    const q = estateQuestion(gdrive!)
+    expect(q.question).toBe('How many M365 / Google Workspace users? (mail, drive, OneDrive, SharePoint)')
   })
 })
 

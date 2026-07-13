@@ -1,29 +1,24 @@
-import type { RateCard, SaasInfraBasis, SaasTier } from '../../lib/engine2/types'
+import type { RateCard, SaasTier } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
 import PctInput from './PctInput'
-import {
-  SAAS_PRICING_EXPLAINER,
-  basisSwitchPreview,
-  saasVsOnPremYear1,
-  tierDerivedRate,
-  tierDescription,
-  type UpdateCard,
-} from './helpers'
+import { SAAS_PRICING_EXPLAINER, saasVsOnPremYear1, tierDerivedRate, type UpdateCard } from './helpers'
 
 interface Props {
   saas: RateCard['saas_cm']
-  /** Full card is needed for the D1 before/after preview (uses fx, SG&A, licence). */
+  /** Full card is needed for the derived ₹/DP column and the SaaS-vs-On-Prem comparison (uses fx, SG&A, licence, on-prem slabs). */
   fullCard: RateCard
   update: UpdateCard
 }
 
-/** Sample deal size for the D1 basis-switch preview (a 25L DP deal, per spec §8). */
-export const BASIS_PREVIEW_SAMPLE_DP = 2_500_000
-
-const activeCol = 'bg-perfios-blue/10'
-
-/** Group (b): SaaS CM tiers — both infra columns, basis switch with price preview, SaaS parameters. */
+/**
+ * Group (b): SaaS CM tiers — lean table (owner: remove clutter). SaaS pricing
+ * always runs on the saas_v3 infra column: the on-prem-ref reference column,
+ * the basis radio/switch, the Included DPs column and the "what this drives"
+ * column are gone from admin (bundle sizes remain data — they surface in the
+ * proposal, not here). infra_basis is hard-coerced to 'saas_v3' on every load
+ * (src/lib/rateCard/repo.ts normalizeRateCard) — the basis choice is abolished.
+ */
 export default function SaasCmGroup({ saas, fullCard, update }: Props) {
   const patchTier = (index: number, patch: Partial<SaasTier>) =>
     update((c) => ({
@@ -37,36 +32,12 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
   const patchSaas = (patch: Partial<Omit<RateCard['saas_cm'], 'tiers'>>) =>
     update((c) => ({ ...c, saas_cm: { ...c.saas_cm, ...patch } }))
 
-  const basis = saas.infra_basis
-  const preview = basisSwitchPreview(fullCard, BASIS_PREVIEW_SAMPLE_DP)
-  const onpremActive = basis === 'onprem_ref'
-
-  const basisRadio = (value: SaasInfraBasis, label: string, note: string) => (
-    <label
-      className={`flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2 ${
-        basis === value ? 'border-perfios-blue bg-perfios-blue/5' : 'border-slate-200'
-      }`}
-    >
-      <input
-        type="radio"
-        name="saas-infra-basis"
-        className="mt-0.5"
-        checked={basis === value}
-        onChange={() => patchSaas({ infra_basis: value })}
-      />
-      <span className="text-sm text-slate-700">
-        {label}
-        <span className="block text-xs text-slate-400">{note}</span>
-      </span>
-    </label>
-  )
-
   return (
     <section className={card}>
       <h2 className="text-sm font-semibold text-perfios-blue">SaaS CM — Tiers</h2>
       <p className="mb-3 mt-1 text-xs text-slate-400">
-        Tier is picked by the committed user base. Hosting infra converts to INR via FX and the SG&amp;A uplift; the
-        highlighted column is the active infra basis.
+        SaaS pricing runs on the SaaS infra column. Each tier includes a DP bundle (shown in proposals); DPs beyond it
+        are billed on actuals at the derived ₹/DP rate.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
@@ -74,11 +45,8 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
             <tr>
               <th className={th}>Tier</th>
               <th className={th}>User cap</th>
-              <th className={`${th} ${onpremActive ? activeCol : ''}`}>Infra $/mo (on-prem ref){onpremActive ? ' — ACTIVE' : ''}</th>
-              <th className={`${th} ${onpremActive ? '' : activeCol}`}>Infra $/mo (SaaS v3){onpremActive ? '' : ' — ACTIVE'}</th>
-              <th className={th}>Included DPs (bundle)</th>
+              <th className={th}>Infra $/mo (SaaS)</th>
               <th className={th}>₹/DP (derived)</th>
-              <th className={th}>What this drives</th>
             </tr>
           </thead>
           <tbody>
@@ -97,17 +65,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
                       onChange={(e) => patchTier(i, { user_cap: toNum(e.target.value) })}
                     />
                   </td>
-                  <td className={`px-2 py-1.5 ${onpremActive ? activeCol : ''}`}>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      className={`${inp} w-24 text-right`}
-                      value={t.infra_usd_mo_onprem_ref}
-                      onChange={(e) => patchTier(i, { infra_usd_mo_onprem_ref: toNum(e.target.value) })}
-                    />
-                  </td>
-                  <td className={`px-2 py-1.5 ${onpremActive ? '' : activeCol}`}>
+                  <td className="px-2 py-1.5">
                     <input
                       type="number"
                       min={0}
@@ -117,20 +75,9 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
                       onChange={(e) => patchTier(i, { infra_usd_mo_saas_v3: toNum(e.target.value) })}
                     />
                   </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      className={`${inp} w-28 text-right`}
-                      value={t.included_dp}
-                      onChange={(e) => patchTier(i, { included_dp: toNum(e.target.value) })}
-                    />
-                  </td>
                   <td className="px-2 py-1.5 text-right font-mono text-sm text-slate-700">
                     ₹{derived.rate_inr_per_dp.toFixed(2)}
                   </td>
-                  <td className="px-2 py-1.5 text-xs text-slate-500">{tierDescription(t.label)}</td>
                 </tr>
               )
             })}
@@ -144,9 +91,9 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
           SaaS vs On-Prem — Year 1
         </p>
         <p className="mb-2 text-xs text-slate-400">
-          For a client sized exactly at each tier&apos;s cap: SaaS Year 1 (implementation + platform fee + overage
-          beyond the bundle) vs. On-Prem Year 1 for the slab that covers the same DP count. A flagged row means SaaS
-          is not undercutting On-Prem at that size — tune included DPs / licence.
+          For a client sized exactly at each tier&apos;s cap: SaaS Year 1 (implementation + platform fee — the quote
+          is overage-free) vs. On-Prem Year 1 for the slab that covers the same DP count. A flagged row means SaaS is
+          not undercutting On-Prem at that size — tune the licence / infra.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
@@ -173,7 +120,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
                   <td className="px-2 py-1.5">
                     {row.saas_gte_onprem ? (
                       <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        SaaS ≥ On-Prem — tune included DPs / licence
+                        SaaS ≥ On-Prem — tune the licence / infra
                       </span>
                     ) : (
                       <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
@@ -185,26 +132,6 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <div className="mt-4 border-t border-slate-100 pt-4">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          SaaS infra basis (D1) — which $/mo column prices hosting
-        </p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {basisRadio('onprem_ref', 'On-Prem Total (reviewed position)', 'The Olivia/Anil-reviewed commercial basis; kept for reference, no longer the default since 2026-07-13.')}
-          {basisRadio('saas_v3', 'SaaS v3 (default since 2026-07-13)', 'Reprices SaaS platform fees to actual SaaS hosting cost — the current default, per owner direction.')}
-        </div>
-        <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-          <span className="font-semibold text-slate-700">
-            Price impact at a {preview.sample_dp_base.toLocaleString('en-IN')} DP deal ({preview.tier_label} tier):
-          </span>{' '}
-          platform fee {formatINR(preview.onprem_ref.platform_fee_inr_yr)}/yr on the on-prem-ref basis vs{' '}
-          {formatINR(preview.saas_v3.platform_fee_inr_yr)}/yr on SaaS v3 ({preview.delta_inr_yr <= 0 ? '−' : '+'}
-          {formatINR(Math.abs(preview.delta_inr_yr))} per year). Currently active:{' '}
-          <span className="font-semibold">{onpremActive ? 'On-Prem Total' : 'SaaS v3'}</span> — switching takes effect
-          only when you publish.
         </div>
       </div>
 
@@ -242,7 +169,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
         <label className="flex items-center justify-between gap-4">
           <span className="text-sm text-slate-700">
             Year-2 renewal %
-            <span className="block text-xs text-slate-400">Year 2+ = this share of the Year-1 platform fee, plus overage on actual Year-2 DPs beyond the bundle.</span>
+            <span className="block text-xs text-slate-400">Year 2+ = this share of the Year-1 platform fee. Overage beyond the bundle is billed on actuals, outside the quote.</span>
           </span>
           <PctInput value={saas.y2_floor_pct} onChange={(fraction) => patchSaas({ y2_floor_pct: fraction })} />
         </label>

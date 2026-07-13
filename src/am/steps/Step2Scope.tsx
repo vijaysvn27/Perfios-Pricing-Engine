@@ -12,10 +12,11 @@ import {
   DP_GROWTH_PCT_QUESTION,
   MODE_LABELS,
   SAAS_MODULE_NOTE,
+  askedEstateRates,
   dpBaseY2FromGrowth,
   estateQuestion,
   growthPctFromBases,
-  visibleEstateRates,
+  hiddenEstateRatesWithValue,
   type ModuleFlags,
 } from '../wizardLogic'
 
@@ -44,7 +45,18 @@ function approxDpHint(n: number): string {
 export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
   const { inputs } = draft
   const isSaas = inputs.deployment_mode === 'saas'
-  const estateRates = visibleEstateRates(rateCard.estate.rates, inputs.deployment_mode, inputs.modules)
+  const estateRates = askedEstateRates(rateCard.estate.rates, inputs.deployment_mode, inputs.modules)
+  // Retired questions (onprem_connector / sharepoint_site / dam_dataset) that
+  // still carry a non-zero quantity from an imported questionnaire or an
+  // older draft — surfaced read-only so removing the question never silently
+  // drops money from the price (owner direction 2026-07-13: fewer wizard
+  // questions).
+  const hiddenWithValue = hiddenEstateRatesWithValue(
+    rateCard.estate.rates,
+    inputs.deployment_mode,
+    inputs.modules,
+    inputs.estate_quantities,
+  )
 
   // Growth-% is UI-local (decision from the CM Calculator call with Rohit,
   // 2026-07-13): only the derived absolute (inputs.dp_base_y2) is persisted,
@@ -224,6 +236,38 @@ export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
                         <span className="mt-0.5 text-[10px] text-slate-400">₹/unit (deal override)</span>
                       </div>
                     )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {hiddenWithValue.length > 0 && (
+        <div className={card}>
+          <span className="text-sm font-medium text-slate-700">From imported / earlier data</span>
+          <p className="mb-2 text-xs text-slate-400">
+            These questions are no longer asked, but this deal already carries a quantity — shown read-only so it
+            keeps pricing correctly.
+          </p>
+          <div className="divide-y divide-slate-100">
+            {hiddenWithValue.map((rate) => {
+              const q = estateQuestion(rate)
+              const qty = inputs.estate_quantities[rate.rate_key] ?? 0
+              return (
+                <div key={rate.rate_key} className="flex items-start justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-slate-700">{q.question}</div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      {rate.label}, {rate.unit}{' '}
+                      <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                        from imported/earlier data
+                      </span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 pt-0.5 text-right text-sm tabular-nums text-slate-500">
+                    {qty.toLocaleString('en-IN')}
                   </div>
                 </div>
               )

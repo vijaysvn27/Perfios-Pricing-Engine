@@ -43,6 +43,43 @@ export function visibleEstateRates(rates: EstateRate[], mode: DeploymentMode, mo
 }
 
 /**
+ * Estate rate keys whose Scope-step QUESTION is retired (owner direction
+ * 2026-07-13, fewer wizard questions): 'onprem_connector' is redundant with
+ * the data-centre count, and 'sharepoint_site' / 'dam_dataset' aren't needed
+ * as separate asks. The rate-card rates for these keys are untouched — a
+ * deal can still carry a non-zero quantity (from an imported questionnaire
+ * or an older draft) and it prices exactly the same; only the INPUT is
+ * hidden from new data entry. See askedEstateRates / hiddenEstateRatesWithValue.
+ */
+export const HIDDEN_ESTATE_KEYS: readonly string[] = ['onprem_connector', 'sharepoint_site', 'dam_dataset']
+
+/** The estate questions Step2Scope actually asks: visibleEstateRates minus
+ * the retired HIDDEN_ESTATE_KEYS questions. */
+export function askedEstateRates(rates: EstateRate[], mode: DeploymentMode, modules: ModuleFlags): EstateRate[] {
+  return visibleEstateRates(rates, mode, modules).filter((rate) => !HIDDEN_ESTATE_KEYS.includes(rate.rate_key))
+}
+
+/**
+ * Hidden-key rows that must still surface, read-only, because they carry a
+ * non-zero quantity already (an imported questionnaire or an older draft
+ * created before the key's question was retired) — so removing the question
+ * never silently drops money from the price. Scoped to
+ * visibleEstateRates first: a hidden key that isn't in scope of the
+ * currently-selected modules is never priced (engine2's estateBases only
+ * sums a bucket when its module is on) and so never needs surfacing either.
+ */
+export function hiddenEstateRatesWithValue(
+  rates: EstateRate[],
+  mode: DeploymentMode,
+  modules: ModuleFlags,
+  quantities: Record<string, number>,
+): EstateRate[] {
+  return visibleEstateRates(rates, mode, modules).filter(
+    (rate) => HIDDEN_ESTATE_KEYS.includes(rate.rate_key) && (quantities[rate.rate_key] ?? 0) > 0,
+  )
+}
+
+/**
  * The effective unit rate for an estate rate on this deal: the deal-specific
  * override when one is present and non-negative (`estate_rate_overrides`,
  * set by the AM in Step2Scope for rates flagged provisional), otherwise the
@@ -295,7 +332,7 @@ const ESTATE_QUESTIONS: Record<string, QuestionCopy> = {
     why: 'Each data centre needs its own collection footprint.',
   },
   gdrive_user: {
-    question: 'How many GDrive / OneDrive users?',
+    question: 'How many M365 / Google Workspace users? (mail, drive, OneDrive, SharePoint)',
     why: 'Drives the file-store scanning scope for DSPM.',
   },
   vm: {

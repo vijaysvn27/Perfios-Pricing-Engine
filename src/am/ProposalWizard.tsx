@@ -11,13 +11,20 @@ import {
   type ProposalInputs,
   type ProposalRow,
 } from '../lib/proposal/proposalsRepo'
+import { mergeQuestionnaireInputs, type QuestionnaireImportResult } from '../lib/proposal/questionnaireImport'
 import { btn, card } from '../admin/styles'
 import PricePanel from './PricePanel'
+import QuestionnaireImportButton from './QuestionnaireImportButton'
 import Step1Deal from './steps/Step1Deal'
 import Step2Scope from './steps/Step2Scope'
 import Step3Commercials from './steps/Step3Commercials'
 import Step4Present from './steps/Step4Present'
 import { defaultInputs, emptyTotals, totalsFromResult } from './wizardLogic'
+
+/** Steps array index of "Scope" — where an in-wizard questionnaire import
+ * jumps to for review, same landing spot as the list-page import
+ * (ProposalsApp.handleQuestionnaireImported). */
+const SCOPE_STEP = 1
 
 interface Props {
   instanceId: string
@@ -99,6 +106,28 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
     [],
   )
 
+  /**
+   * Mid-journey questionnaire import (item 3b — upload at multiple journey
+   * points, not just the list page): MERGES the parsed result into the
+   * CURRENT draft rather than starting a new one. Customer name only fills
+   * in when the draft's is still blank (never overwrites an AM-entered
+   * name); notes are appended, not replaced. Lands on Scope so the AM
+   * reviews the imported values, same landing spot as the list-page import.
+   */
+  function handleQuestionnaireImported(result: QuestionnaireImportResult) {
+    setDraft((d) => {
+      const importedNotes = result.notes.join('\n')
+      const internal_notes = [d.internal_notes, importedNotes].filter((s) => s.trim().length > 0).join('\n')
+      return {
+        ...d,
+        customer_name: d.customer_name.trim() ? d.customer_name : (result.customer_name ?? d.customer_name),
+        internal_notes,
+        inputs: mergeQuestionnaireInputs(d.inputs, result.inputs),
+      }
+    })
+    setStep(SCOPE_STEP)
+  }
+
   /** Throwing variant — Step 4 uses it so exports abort when saving fails. */
   async function handleSave(): Promise<void> {
     if (!rc) return
@@ -160,6 +189,9 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
           {draft.customer_name.trim() || 'New proposal'}
         </h1>
         {savedTick && <span className="text-xs text-perfios-green">Saved ✓</span>}
+        <span className="ml-auto">
+          <QuestionnaireImportButton onImported={handleQuestionnaireImported} compact />
+        </span>
       </div>
 
       {persisted === false && (
