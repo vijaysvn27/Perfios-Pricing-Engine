@@ -11,6 +11,7 @@ import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
 import { buildSizingSection } from './sizing'
 import {
+  blankIfZero,
   CONSENT_MODIFICATION_CAVEAT,
   discountTotalRows,
   findLine,
@@ -97,7 +98,7 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
   const rows: (string | number)[][] = result.lines
     .filter((l) => l.included)
-    .map((l) => [l.label, ...l.years_inr, l.tco_inr])
+    .map((l) => [l.label, ...l.years_inr.map(blankIfZero), blankIfZero(l.tco_inr)])
   const netYears = netYearsOf(result.total_years_inr, d)
   rows.push(
     ...discountTotalRows({
@@ -117,68 +118,81 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
  * SaaS/Hybrid single-mode Commercial Summary — a proper subscription table
  * (owner complaint: "SaaS proposal has no commercial table"). Every rupee
  * figure is read straight off ModeResult/trace fields the engine already
- * computed — platform fee, Year-1 overage, Year-2+ overage, implementation
- * (engine2.ts's priceCmSaas pushes exactly these trace steps). The only
- * arithmetic performed here is summing those same sourced figures across
- * the years they actually bill into a per-row TCO — the identical roll-up
- * buildLine() itself performs internally for ComponentLine.tco_inr. The
- * floor guard the engine carries (`recurring = max(floor, platform +
- * y2Overage)`) never actually binds once the platform fee recurs (platform
- * alone always exceeds 30% of itself), so "Platform fee (every year) +
- * Overage" always foots exactly to the CM line's own recurring_inr — the
- * TOTAL row below is still sourced straight from the engine's own
- * total_years_inr/total_tco_inr, not from summing these rows, so any future
- * change to that invariant can never silently under- or over-state the
- * total.
+ * computed — platform fee, Year-1 overage, Year-2+ renewal, Year-2+ overage,
+ * implementation (engine2.ts's priceCmSaas pushes exactly these trace
+ * steps). The only arithmetic performed here is summing those same sourced
+ * figures across the years they actually bill into a per-row TCO. Reflects
+ * the 2026-07-13 engine change (CM Calculator call with Rohit): Year 2+ is
+ * now the renewal (y2_floor_pct of the Year-1 platform fee) plus overage on
+ * actuals — no longer the full platform fee recurring — which is why
+ * "Platform fee" is Year-1-only here and a separate "Annual renewal" row
+ * carries Year 2..N. The TOTAL row is still sourced straight from the
+ * engine's own total_years_inr/total_tco_inr, not from summing these rows,
+ * so a future engine change can never silently under- or over-state it.
+ * Blank-not-zero (owner: "Fields not included in the pricing should be left
+ * empty"): every cell with no charge in a year is the empty string, never 0.
  */
 function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
   const years = result.total_years_inr.length
   const d = p.inputs.discount_pct
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
   const trace = result.trace
-  const platform = traceValue(trace, 'Platform fee (annual)') ?? 0
+  const platform = traceValue(trace, 'Platform fee (Year 1)') ?? 0
   const implementation = traceValue(trace, 'Implementation (one-time)') ?? 0
   const y1Overage = traceValue(trace, 'Year 1 overage') ?? 0
-  const y2Overage = traceValue(trace, 'Year 2+ overage') ?? 0
+  const y2Overage = traceValue(trace, 'Year 2+ overage (billed on actuals)') ?? 0
+  const renewalStep = trace.find((s) => /^Year 2\+ renewal/.test(s.label))
+  const renewal = renewalStep?.result ?? 0
+  const renewalPctMatch = renewalStep?.label.match(/\(([\d.]+)% of platform\)/)
+  const renewalPct = renewalPctMatch ? renewalPctMatch[1] : '30'
   const included = result.saas_included_dp ?? 0
   const rate = result.saas_per_user_rate ?? 0
-  const DASH = '—'
+  const B = blankIfZero
 
   const rows: (string | number)[][] = []
 
-  // Platform fee recurs every year as the committed base (priceCmSaas:
-  // recurring = platform + y2Overage), so it's a flat value across every
-  // year column, not a Year-1-only line.
+  // Platform fee — Year 1 only. Includes the tier's bundled DP count and
+  // covers every consent action for those data principals; from Year 2 the
+  // deal moves to the Annual renewal row below.
   rows.push([
-    `Platform fee (includes ${included.toLocaleString('en-IN')} data principals)`,
-    ...Array.from({ length: years }, () => platform),
-    platform * years,
+    `Platform fee — includes ${included.toLocaleString('en-IN')} data principals, all consent actions (grant, ` +
+      `revocation, modification, deletion, cookie consent)`,
+    B(platform),
+    ...Array.from({ length: years - 1 }, () => ''),
+    B(platform),
   ])
 
-  // Overage — data principals beyond the bundle — only when there is any,
-  // in Year 1 or Year 2+ (omitted entirely for a deal sized within the
-  // bundle, rather than printing a row of zeroes).
+  // Overage — DPs beyond the bundle, billed on actuals each year — omitted
+  // entirely for a deal sized within the bundle (both Year 1 and Year 2+
+  // overage are zero), rather than printing a row of blanks.
   if (y1Overage > 0 || y2Overage > 0) {
+    const overageYears = [y1Overage, ...Array.from({ length: years - 1 }, () => y2Overage)]
     rows.push([
-      `Additional data principals beyond the bundle — ${formatPerUserRate(rate)}/DP/year`,
-      y1Overage,
-      ...Array.from({ length: years - 1 }, () => y2Overage),
-      y1Overage + y2Overage * (years - 1),
+      `Overage — DPs beyond the bundle × ${formatPerUserRate(rate)}`,
+      ...overageYears.map(B),
+      B(y1Overage + y2Overage * (years - 1)),
     ])
   }
 
-  rows.push([
-    'Implementation (one-time)',
-    implementation,
-    ...Array.from({ length: years - 1 }, () => DASH),
-    implementation,
-  ])
+  // Implementation — one-time, Year 1 only.
+  rows.push(['Implementation (one-time)', B(implementation), ...Array.from({ length: years - 1 }, () => ''), B(implementation)])
+
+  // Annual renewal — Year 2..N only, at the engine's y2_floor_pct of the
+  // Year-1 platform fee (the "renewal, not the full platform fee" change).
+  if (years > 1) {
+    rows.push([
+      `Annual renewal — ${renewalPct}% of platform fee`,
+      '',
+      ...Array.from({ length: years - 1 }, () => B(renewal)),
+      B(renewal * (years - 1)),
+    ])
+  }
 
   // Estate module lines (DSPM/DAM/Endpoint) — unchanged from the plain
   // Commercial Summary table, only relevant for Hybrid (SaaS is CM-only).
   for (const line of result.lines) {
     if (line.component_key === 'cm' || !line.included) continue
-    rows.push([line.label, ...line.years_inr, line.tco_inr])
+    rows.push([line.label, ...line.years_inr.map(B), B(line.tco_inr)])
   }
 
   const netYears = netYearsOf(result.total_years_inr, d)
@@ -289,7 +303,7 @@ function moduleRow(
     // This row only exists because the AM selected the module (see
     // buildCompare below), so an excluded line here means SaaS genuinely
     // can't carry it — not that it was never in scope.
-    return line.included ? line[metric] : 'On-Prem / Hybrid only'
+    return line.included ? blankIfZero(line[metric]) : 'On-Prem / Hybrid only'
   }
   return [label, cell(results.onprem), cell(results.hybrid), cell(results.saas)]
 }
@@ -341,13 +355,13 @@ function buildCompare(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     if (d > 0 && p.discount_shown) {
       const disc = list.map((v, i) => -(v - net[i]))
       return [
-        [`${label} — List`, ...list],
-        [`Discount (${fmtPct(d)})`, ...disc],
-        [`${label} — Net`, ...net],
+        [`${label} — List`, ...list.map(blankIfZero)],
+        [`Discount (${fmtPct(d)})`, ...disc.map(blankIfZero)],
+        [`${label} — Net`, ...net.map(blankIfZero)],
       ]
     }
-    if (d > 0 && !p.discount_shown) return [[label, ...net]]
-    return [[label, ...list]]
+    if (d > 0 && !p.discount_shown) return [[label, ...net.map(blankIfZero)]]
+    return [[label, ...list.map(blankIfZero)]]
   }
 
   rows.push(...compareTotalRows('Total Year 1', totalYear1List, totalYear1Net))

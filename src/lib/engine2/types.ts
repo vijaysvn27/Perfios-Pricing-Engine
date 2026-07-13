@@ -108,6 +108,13 @@ export interface TraceStep {
   label: string
   formula: string // formula in words, with the actual numbers
   result: number
+  /**
+   * How to render `result`: 'inr' (₹, Indian grouping — the default when
+   * absent), 'count' (plain grouped number, e.g. a DP bundle size), 'rate'
+   * (₹/unit), 'usd' ($). Added after a client meeting exposed a DP count
+   * rendering as ₹3,00,000 (2026-07-13, CM Calculator call with Rohit).
+   */
+  kind?: 'inr' | 'count' | 'rate' | 'usd'
 }
 
 export type ComponentKey = 'cm' | 'dspm' | 'dam' | 'endpoint'

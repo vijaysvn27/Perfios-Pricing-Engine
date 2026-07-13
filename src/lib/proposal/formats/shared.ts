@@ -33,6 +33,18 @@ export function fmtPct(d: number): string {
   return `${Number(pct.toFixed(2))}%`
 }
 
+/**
+ * Blank-not-zero rule (owner 2026-07-13: "Fields not included in the pricing
+ * should be left empty"): a table cell with no charge renders as an empty
+ * string, never "0" or "—". Applied at the point every RenderTable row is
+ * built (this file's discountTotalRows, and every format/sizing table), so
+ * excelExport and RenderModelView — which already render non-number cells
+ * as plain text — never have to special-case a numeric zero.
+ */
+export function blankIfZero(n: number): string | number {
+  return n === 0 ? '' : n
+}
+
 /** Look up a trace step's numeric result by its exact label. */
 export function traceValue(trace: TraceStep[], label: string): number | undefined {
   return trace.find((s) => s.label === label)?.result
@@ -54,10 +66,28 @@ export function formatPerUserRate(rate: number): string {
 }
 
 /**
+ * The Year-2+ renewal percentage baked into engine2's `Year 2+ renewal (N%
+ * of platform)` trace step label (RATE_CARD_SEED.saas_cm.y2_floor_pct, 30%
+ * as seeded) — read off the trace rather than hardcoded so a rate-card
+ * change is reflected in every rendered sentence automatically. Falls back
+ * to '30' (the seeded default) only when the step is missing entirely
+ * (on-prem results, which never carry it).
+ */
+function renewalPct(trace: TraceStep[]): string {
+  const step = trace.find((s) => /^Year 2\+ renewal/.test(s.label))
+  const m = step?.label.match(/\(([\d.]+)% of platform\)/)
+  return m ? m[1] : '30'
+}
+
+/**
  * "Included DPs + overage" framing (Honda pattern): the Year-1 platform fee
- * includes the tier's bundled data-principal count; data principals beyond
- * that bundle are charged at the derived per-DP rate, billed on actuals.
- * Reads `ModeResult.saas_included_dp` / `saas_per_user_rate` — NOT
+ * includes the tier's bundled data-principal count and covers every consent
+ * action for those data principals; data principals beyond that bundle are
+ * charged at the derived per-DP rate, billed on actuals; from Year 2 the
+ * platform renews at the engine's y2_floor_pct of the Year-1 fee (owner
+ * direction 2026-07-13: SaaS/Hybrid Year 2+ is renewal + overage on
+ * actuals, no longer the full platform fee recurring). Reads
+ * `ModeResult.saas_included_dp` / `saas_per_user_rate` — NOT
  * `inputs.dp_base_y1` (the committed base, a different number from the
  * bundle) — so this always names the actual bundle the platform fee
  * carries. Only meaningful for SaaS/Hybrid (on-prem has neither field) —
@@ -72,25 +102,24 @@ export function includedDpNote(p: ClientSafeProposal): string | undefined {
   const included = result?.saas_included_dp
   if (rate === undefined || included === undefined) return undefined
   return (
-    `Included: ${included.toLocaleString('en-IN')} data principals in the Year-1 platform fee. ` +
-    `Data principals beyond the bundle are charged at ${formatPerUserRate(rate)} per data principal per year, ` +
-    `billed on actuals.`
+    `Included: ${included.toLocaleString('en-IN')} data principals — covering all consent actions (grant, ` +
+    `revocation, modification, deletion, cookie consent) — in the Year-1 platform fee. Beyond the bundle: ` +
+    `${formatPerUserRate(rate)} per data principal per year, billed on actuals. From Year 2, the platform renews ` +
+    `at ${renewalPct(result.trace)}% of the Year-1 platform fee.`
   )
 }
 
 /**
- * Year-2+ rule sentence for the SaaS/hybrid model: the Year-1 platform fee
- * recurs every year as the committed base, and data principals beyond the
- * bundle are billed Year over year at the same per-DP rate (engine2.ts's
- * priceCmSaas: `recurring = max(floor, platform + y2Overage)` — the floor
- * guard is retained defensively but cannot bind once the platform fee
- * recurs, since platform alone always exceeds the floor percentage of
- * itself).
+ * Year-2+ rule sentence for the SaaS/hybrid model (owner direction
+ * 2026-07-13, CM Calculator call with Rohit): Year 2 onward bills the
+ * renewal — y2_floor_pct of the Year-1 platform fee — plus any data
+ * principals beyond the included bundle at the same per-DP rate, billed on
+ * actuals. Supersedes the earlier "platform fee recurs in full" framing.
  */
-export function year2RuleNote(_trace: TraceStep[]): string {
+export function year2RuleNote(trace: TraceStep[]): string {
   return (
-    'From Year 2 onward, your annual fee is the Year-1 platform fee (it recurs as your committed base) plus any ' +
-    'data principals beyond the included bundle, billed at the same per-DP rate.'
+    `From Year 2 onward, your annual fee is the renewal (${renewalPct(trace)}% of the Year-1 platform fee) plus ` +
+    'any data principals beyond the included bundle, billed on actuals at the same per-DP rate.'
   )
 }
 
@@ -123,7 +152,7 @@ export function discountTotalRows(opts: {
 }): (string | number)[][] {
   const { label, years, netYears, tco, netTco, discount_pct: d, discount_shown } = opts
   const row = (lbl: string, ys: number[], t?: number): (string | number)[] =>
-    t !== undefined ? [lbl, ...ys, t] : [lbl, ...ys]
+    t !== undefined ? [lbl, ...ys.map(blankIfZero), blankIfZero(t)] : [lbl, ...ys.map(blankIfZero)]
 
   if (d > 0 && discount_shown) {
     const discYears = years.map((y, i) => -(y - netYears[i]))

@@ -21,6 +21,27 @@ interface Props {
 
 const MODES: DeploymentMode[] = ['onprem', 'hybrid', 'saas']
 
+/**
+ * Renders a trace step's result by its `kind` (added after a client meeting
+ * exposed a DP bundle count rendering as "₹3,00,000" instead of a plain
+ * count — 2026-07-13, CM Calculator call with Rohit): 'count' is a plain
+ * grouped number of data principals, 'rate' a per-DP-per-year rupee rate,
+ * 'usd' a monthly dollar figure; 'inr' (or no kind at all — most steps)
+ * falls back to the existing ₹ Indian-grouped render.
+ */
+function formatTraceResult(step: TraceStep): string {
+  switch (step.kind) {
+    case 'count':
+      return `${step.result.toLocaleString('en-IN')} DPs`
+    case 'rate':
+      return `₹${step.result.toLocaleString('en-IN')}/DP/yr`
+    case 'usd':
+      return `$${step.result.toLocaleString('en-IN')}/mo`
+    default:
+      return formatINR(step.result)
+  }
+}
+
 function TraceList({ trace }: { trace: TraceStep[] }) {
   return (
     <ol className="mt-2 space-y-2">
@@ -28,7 +49,7 @@ function TraceList({ trace }: { trace: TraceStep[] }) {
         <li key={i} className="rounded-md bg-slate-50 px-2 py-1.5">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-xs font-medium text-slate-700">{step.label}</span>
-            <span className="shrink-0 text-xs tabular-nums text-perfios-blue">{formatINR(step.result)}</span>
+            <span className="shrink-0 text-xs tabular-nums text-perfios-blue">{formatTraceResult(step)}</span>
           </div>
           <div className="mt-0.5 text-xs text-slate-400">{step.formula}</div>
         </li>

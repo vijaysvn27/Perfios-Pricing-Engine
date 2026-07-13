@@ -420,7 +420,7 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
     expect(text).toMatch(/Included DP bundle: 15,00,000 data principals in the Year-1 platform fee/)
     expect(text).toMatch(/Per-user rate: ₹2 per user per year/)
     expect(text).toMatch(/Year-1 overage: 10,00,000 data principals beyond the bundle × ₹2 = ₹20,00,000/)
-    expect(text).toMatch(/Year-1 platform fee \(it recurs as your committed base\)/) // Year 2+ rule, shared copy
+    expect(text).toMatch(/the renewal \(30% of the Year-1 platform fee\)/) // Year 2+ rule, shared copy
     expect(text).toMatch(/Perfios-hosted, India region/)
     // The consent governance bridge sits on the client's premises in EVERY
     // hosted mode, INCLUDING SaaS (Olivia, Vi call 2026-07-07: "even in SaaS
@@ -461,12 +461,13 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
 describe('included-DP note (Honda "included DPs + overage" framing)', () => {
   const hybridInputs: DealInputs = { ...saasInputs, deployment_mode: 'hybrid' }
 
-  it('appears in "What Drives Your Price" for SaaS with the bundle and derived rate (15,00,000 / ₹2)', () => {
+  it('appears in "What Drives Your Price" for SaaS with the bundle, derived rate, and renewal percentage (15,00,000 / ₹2 / 30%)', () => {
     const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
     const driver = model.sections.find((s) => /what drives your price/i.test(s.heading))
     expect(driver?.paragraphs).toContainEqual(
-      'Included: 15,00,000 data principals in the Year-1 platform fee. Data principals beyond the bundle are ' +
-        'charged at ₹2 per data principal per year, billed on actuals.',
+      'Included: 15,00,000 data principals — covering all consent actions (grant, revocation, modification, ' +
+        'deletion, cookie consent) — in the Year-1 platform fee. Beyond the bundle: ₹2 per data principal per ' +
+        'year, billed on actuals. From Year 2, the platform renews at 30% of the Year-1 platform fee.',
     )
     // The consent-modification caveat rides along as a bullet (owner
     // documentation call: consent modifications by existing DPs never
@@ -479,6 +480,7 @@ describe('included-DP note (Honda "included DPs + overage" framing)', () => {
     const driver = model.sections.find((s) => /what drives your price/i.test(s.heading))
     const text = (driver?.paragraphs ?? []).join(' ')
     expect(text).toMatch(/Included: 15,00,000 data principals/)
+    expect(text).toMatch(/From Year 2, the platform renews at 30% of the Year-1 platform fee/)
   })
 
   it('is absent for On-Prem (no per-user rate to quote)', () => {
@@ -616,37 +618,46 @@ describe('moduleWise', () => {
 // (2,500,000 − 1,500,000) × 2 = 2,000,000; implementation = 15% × licence
 // 1,500,000 = 225,000; Year 1 total = 225,000 + 3,866,496 + 2,000,000 =
 // 6,091,496. saasInputs grows dp_base_y2 to 3,000,000: Y2+ overage =
-// (3,000,000 − 1,500,000) × 2 = 3,000,000; recurring = platform + Y2+
-// overage = 3,866,496 + 3,000,000 = 6,866,496 (the 30% floor, 1,159,949,
-// never binds — platform alone already exceeds it). 3-year TCO =
-// 6,091,496 + 2 × 6,866,496 = 19,824,488.
+// (3,000,000 − 1,500,000) × 2 = 3,000,000; renewal = round(30% × platform
+// 3,866,496) = 1,159,949 (owner direction 2026-07-13, CM Calculator call
+// with Rohit: Year 2+ = renewal + overage on actuals, the platform fee no
+// longer recurs in full); Year 2+ total = 1,159,949 + 3,000,000 = 4,159,949.
+// 3-year TCO = 6,091,496 + 2 × 4,159,949 = 14,411,394.
 describe('perfiosFormat subscription table (Commercial Summary, saas/hybrid) — fixes "no commercial table"', () => {
-  it('Platform fee row recurs every year (includes the bundle), Overage row splits Y1/Y2+, Implementation is Year-1 only, TOTAL matches engine totals', () => {
+  it('Platform fee and Implementation are Year-1 only, Overage splits Y1/Y2+, Annual renewal is Year-2+ only, TOTAL matches engine totals', () => {
     const result = price(RATE_CARD_SEED, saasInputs)
     const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
     const table = tableFromModel(model, (h) => h === '2. Commercial Summary (INR, exclusive of taxes)')
     expect(table.columns).toEqual(['Component', 'Year 1', 'Year 2', 'Year 3', '3-Year TCO'])
 
     expect(table.rows).toContainEqual([
-      'Platform fee (includes 15,00,000 data principals)',
+      'Platform fee — includes 15,00,000 data principals, all consent actions (grant, revocation, modification, ' +
+        'deletion, cookie consent)',
       3_866_496,
+      '',
+      '',
       3_866_496,
-      3_866_496,
-      3_866_496 * 3,
     ])
     expect(table.rows).toContainEqual([
-      'Additional data principals beyond the bundle — ₹2/DP/year',
+      'Overage — DPs beyond the bundle × ₹2',
       2_000_000,
       3_000_000,
       3_000_000,
       2_000_000 + 3_000_000 * 2,
     ])
-    expect(table.rows).toContainEqual(['Implementation (one-time)', 225_000, '—', '—', 225_000])
+    expect(table.rows).toContainEqual(['Implementation (one-time)', 225_000, '', '', 225_000])
+    expect(table.rows).toContainEqual([
+      'Annual renewal — 30% of platform fee',
+      '',
+      1_159_949,
+      1_159_949,
+      1_159_949 * 2,
+    ])
 
     const totalRow = table.rows.find((r) => r[0] === 'TOTAL')
     expect(totalRow).toEqual(['TOTAL', ...result.total_years_inr, result.total_tco_inr])
-    expect(result.total_years_inr).toEqual([6_091_496, 6_866_496, 6_866_496])
-    expect(result.total_tco_inr).toBe(19_824_488)
+    expect(result.total_years_inr).toEqual([6_091_496, 4_159_949, 4_159_949])
+    expect(result.total_tco_inr).toBe(14_411_394)
   })
 
   it('the Overage row is omitted entirely for a deal sized within the bundle (no Y1 or Y2+ overage)', () => {
@@ -657,7 +668,7 @@ describe('perfiosFormat subscription table (Commercial Summary, saas/hybrid) —
     expect(result.saas_included_dp).toBe(300_000) // sanity: confirms the tier/bundle picked
     const model = buildFormat('perfios', clientSafe(withinBundle), FIXED_DATE)
     const table = tableFromModel(model, (h) => h === '2. Commercial Summary (INR, exclusive of taxes)')
-    expect(table.rows.some((r) => String(r[0]).startsWith('Additional data principals'))).toBe(false)
+    expect(table.rows.some((r) => String(r[0]).startsWith('Overage —'))).toBe(false)
   })
 
   it('Hybrid gets the same subscription table plus estate module lines when selected', () => {

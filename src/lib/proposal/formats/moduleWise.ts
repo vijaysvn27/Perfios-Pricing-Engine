@@ -5,7 +5,7 @@ import type { ClientSafeProposal } from '../clientSafe'
 import { narrativeSections } from '../narrative'
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
-import { discountTotalRows, formatINR, netYearsOf } from './shared'
+import { blankIfZero, discountTotalRows, formatINR, netYearsOf } from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
 const TITLE = 'Commercial Summary — Module-wise'
@@ -69,7 +69,7 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
   // sets it from the computed base, so this can never drift from scope).
   const rows: (string | number)[][] = result.lines
     .filter((l) => l.included)
-    .map((l) => [l.label, ...l.years_inr, l.tco_inr])
+    .map((l) => [l.label, ...l.years_inr.map(blankIfZero), blankIfZero(l.tco_inr)])
 
   const netYears = netYearsOf(result.total_years_inr, d)
   rows.push(

@@ -1,6 +1,7 @@
 import type { OnPremSlab, RateCard } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
+import PctInput from './PctInput'
 import { slabDescription, type UpdateCard } from './helpers'
 
 interface Props {
@@ -80,30 +81,14 @@ export default function OnPremCmGroup({ cm, update }: Props) {
             Deployment % (one-time)
             <span className="block text-xs text-slate-400">One-time deployment charge on top of the licence, billed in Year 1 only.</span>
           </span>
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            className={`${inp} w-24 text-right`}
-            value={cm.deployment_pct}
-            onChange={(e) => patchPct({ deployment_pct: toNum(e.target.value) })}
-          />
+          <PctInput value={cm.deployment_pct} onChange={(fraction) => patchPct({ deployment_pct: fraction })} />
         </label>
         <label className="flex items-center justify-between gap-4">
           <span className="text-sm text-slate-700">
             Support % (annual)
             <span className="block text-xs text-slate-400">Annual support on the licence, from Year 1; it is the whole Year-2+ price.</span>
           </span>
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            className={`${inp} w-24 text-right`}
-            value={cm.support_pct}
-            onChange={(e) => patchPct({ support_pct: toNum(e.target.value) })}
-          />
+          <PctInput value={cm.support_pct} onChange={(fraction) => patchPct({ support_pct: fraction })} />
         </label>
       </div>
     </section>

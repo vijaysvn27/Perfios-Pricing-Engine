@@ -23,7 +23,9 @@ import {
   buildSizingLines,
   defaultInputs,
   defaultPaymentTerms,
+  dpBaseY2FromGrowth,
   fractionToPct,
+  growthPctFromBases,
   includeBom,
   pctToFraction,
   proposalFilename,
@@ -190,6 +192,39 @@ describe('discount unit conversion', () => {
   it('fractionToPct round-trips clean values', () => {
     expect(fractionToPct(0.15)).toBe(15)
     expect(fractionToPct(pctToFraction(12.5))).toBe(12.5)
+  })
+})
+
+describe('growth-% <-> dp_base_y2 (Step2Scope, CM Calculator call with Rohit 2026-07-13)', () => {
+  it('dpBaseY2FromGrowth rounds Year-1 base up by a whole-percent growth figure', () => {
+    expect(dpBaseY2FromGrowth(500_000, 10)).toBe(550_000)
+    expect(dpBaseY2FromGrowth(2_500_000, 20)).toBe(3_000_000)
+    expect(dpBaseY2FromGrowth(333_333, 10)).toBe(366_666) // round(366,666.3)
+  })
+
+  it('dpBaseY2FromGrowth treats 0% growth as flat', () => {
+    expect(dpBaseY2FromGrowth(500_000, 0)).toBe(500_000)
+  })
+
+  it('dpBaseY2FromGrowth handles negative growth (de-growth)', () => {
+    expect(dpBaseY2FromGrowth(500_000, -10)).toBe(450_000)
+  })
+
+  it('growthPctFromBases is the inverse of dpBaseY2FromGrowth for whole-percent inputs', () => {
+    expect(growthPctFromBases(500_000, 550_000)).toBe(10)
+    expect(growthPctFromBases(2_500_000, 3_000_000)).toBe(20)
+  })
+
+  it('growthPctFromBases returns 0 for a zero (or blank) Year-1 base, never NaN/Infinity', () => {
+    expect(growthPctFromBases(0, 0)).toBe(0)
+    expect(growthPctFromBases(0, 500_000)).toBe(0)
+  })
+
+  it('round-trips: growthPctFromBases(y1, dpBaseY2FromGrowth(y1, pct)) recovers a whole-percent pct', () => {
+    for (const pct of [0, 5, 10, 25, 50]) {
+      const y2 = dpBaseY2FromGrowth(2_500_000, pct)
+      expect(growthPctFromBases(2_500_000, y2)).toBe(pct)
+    }
   })
 })
 

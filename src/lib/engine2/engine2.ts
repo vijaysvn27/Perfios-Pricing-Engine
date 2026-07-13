@@ -73,18 +73,22 @@ function priceCmSaas(card: RateCard, baseY1: number, baseY2: number, trace: Trac
   // Year 2+ adds overage on actual DPs beyond the bundle. The floor is kept
   // as a guard but cannot bind while the platform fee recurs.
   const y2Overage = Math.max(0, baseY2 - included) * perUserRate
-  const floor = r(s.y2_floor_pct * platform)
-  const recurring = Math.max(floor, platform + y2Overage)
+  // Year 2+ mirrors the On-Prem pattern (confirmed on the CM Calculator call
+  // with Rohit, 2026-07-13): Year 1 pays the full platform fee; renewal from
+  // Year 2 is y2_floor_pct (30%) of the platform, plus overage on actuals.
+  const renewal = r(s.y2_floor_pct * platform)
+  const recurring = renewal + y2Overage
   trace.push(
-    { label: 'SaaS tier', formula: `DP base ${inr(baseY1)} ≤ ${tier.label} cap ${inr(tier.user_cap)} → tier ${tier.label} (${s.infra_basis})`, result: usdMo },
+    { label: 'SaaS tier', formula: `DP base ${inr(baseY1)} ≤ ${tier.label} cap ${inr(tier.user_cap)} → tier ${tier.label} (${s.infra_basis})`, result: usdMo, kind: 'usd' },
     { label: 'Hosting infra (annual)', formula: `$${usdMo}/mo × 12 × ₹${s.fx_inr_per_usd}/USD × (1 + ${s.sgna_uplift_pct * 100}% SG&A)`, result: infra },
-    { label: 'Platform fee (annual)', formula: `licence ₹${inr(licence)} + infra ₹${inr(infra)}`, result: platform },
+    { label: 'Platform fee (Year 1)', formula: `licence ₹${inr(licence)} + infra ₹${inr(infra)}`, result: platform },
     { label: 'Implementation (one-time)', formula: `${s.implementation_pct * 100}% × licence ₹${inr(licence)}`, result: impl },
-    { label: 'Included DP bundle', formula: `${tier.label} tier bundles ${inr(included)} data principals in the platform fee`, result: included },
-    { label: 'Overage rate', formula: `platform ₹${inr(platform)} ÷ ${inr(tier.user_cap)} tier capacity = ₹${(platform / tier.user_cap).toFixed(2)} → ₹${inr(perUserRate)}/DP/year (rounded up)`, result: perUserRate },
+    { label: 'Included DP bundle', formula: `${tier.label} tier includes ${inr(included)} data principals — all consent actions (grant, revocation, modification, deletion, cookie consent)`, result: included, kind: 'count' },
+    { label: 'Overage rate', formula: `platform ₹${inr(platform)} ÷ ${inr(tier.user_cap)} tier capacity = ₹${(platform / tier.user_cap).toFixed(2)} → ₹${inr(perUserRate)}/DP/year (rounded up)`, result: perUserRate, kind: 'rate' },
     { label: 'Year 1 overage', formula: `max(0, ${inr(baseY1)} − ${inr(included)}) DPs × ₹${inr(perUserRate)}/DP`, result: y1Overage },
-    { label: 'Year 2+ overage', formula: `max(0, ${inr(baseY2)} − ${inr(included)}) DPs × ₹${inr(perUserRate)}/DP`, result: y2Overage },
-    { label: `Year 2+ (platform + overage, ${s.y2_floor_pct * 100}% floor guard)`, formula: `max(₹${inr(floor)}, platform ₹${inr(platform)} + overage ₹${inr(y2Overage)})`, result: recurring },
+    { label: `Year 2+ renewal (${s.y2_floor_pct * 100}% of platform)`, formula: `${s.y2_floor_pct * 100}% × platform ₹${inr(platform)}`, result: renewal },
+    { label: 'Year 2+ overage (billed on actuals)', formula: `max(0, ${inr(baseY2)} − ${inr(included)}) DPs × ₹${inr(perUserRate)}/DP`, result: y2Overage },
+    { label: 'Year 2+ total', formula: `renewal ₹${inr(renewal)} + overage ₹${inr(y2Overage)}`, result: recurring },
   )
   return { one_time: impl, year1: impl + platform + y1Overage, recurring, per_user_rate: perUserRate, included_dp: included }
 }

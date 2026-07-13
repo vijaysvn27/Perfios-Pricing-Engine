@@ -11,6 +11,25 @@ import type {
 /** Shared shape for rate-card mutators passed down to the group editors. */
 export type UpdateCard = (fn: (c: RateCard) => RateCard) => void
 
+// ---------------------------------------------------------------------------
+// Percent-input boundary conversion (owner: "when you say deployment /
+// implementation in %, the input should not be in decimal" — every percent
+// field in the admin Rate Card UI displays/accepts whole numbers, e.g. 18 for
+// 18%, and converts to/from the stored 0..1 fraction only at the input
+// boundary. Rounded to 4 decimal places on the fraction side to guard against
+// float round-trip artifacts (18 -> 0.18 -> 18, never 0.18000000000000002).
+// ---------------------------------------------------------------------------
+
+/** Stored fraction (0..1) → whole-percent number for display (0.18 -> 18). */
+export function pctToInput(fraction: number): number {
+  return Math.round(fraction * 1_000_000) / 10_000
+}
+
+/** Whole-percent number from the input (18) → stored fraction (0.18). */
+export function inputToPct(percent: number): number {
+  return Math.round(percent * 100) / 10_000
+}
+
 /** Same pick rule as engine2: first tier whose cap covers the base; last is catch-all. */
 export function pickSaasTier(tiers: SaasTier[], committedBase: number): SaasTier {
   for (const t of tiers) if (committedBase <= t.user_cap) return t
@@ -94,12 +113,12 @@ export function tierDescription(label: string): string {
   return `Applies while the committed user base fits this cap — its included-DP bundle and hosting infra set the ₹/DP rate for the ${label} tier.`
 }
 
-/** Explainer line shown under the SaaS CM tier table (bundled-DP model,
- * 2026-07-13 owner direction, corrected): the bundle + overage-rate
- * derivation plus the Year-2+ rule, in one sentence so admins see the model
- * without opening the trace. */
+/** Explainer line shown under the SaaS CM tier table (bundled-DP renewal
+ * model, 2026-07-13 owner direction, confirmed on the CM Calculator call with
+ * Rohit): the bundle + overage-rate derivation plus the Year-2+ rule, in the
+ * owner's own words, so admins see the model without opening the trace. */
 export const SAAS_PRICING_EXPLAINER =
-  "SaaS pricing is bundled: the tier's platform fee (licence + infra) includes a set number of data principals and recurs every year; DPs beyond the bundle are overage at ceil(platform ÷ tier cap) ₹/DP, billed from Year 1. Year 2+ = greater of 30% of the Year-1 platform fee or the platform fee plus actual overage."
+  "The platform fee includes the tier's DP bundle — covering all consent actions (grant, revocation, modification, deletion, cookie consent). DPs beyond the bundle are charged at the overage rate, billed on actuals. Year 1 = implementation + platform fee (+ overage on the declared base). Year 2 onwards = 30% of the platform fee + overage on actuals."
 
 export interface TierDerivedRate {
   infra_inr_yr: number

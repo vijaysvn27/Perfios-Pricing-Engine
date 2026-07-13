@@ -236,9 +236,41 @@ export const DP_BASE_Y1_QUESTION: QuestionCopy = {
   why: 'Sets your licence slab (On-Prem) or committed tier (SaaS / Hybrid).',
 }
 
-export const DP_BASE_Y2_QUESTION: QuestionCopy = {
-  question: 'How many do you expect by the end of Year 2?',
-  why: 'Drives your Year-2+ bill on SaaS / Hybrid: actual users × the per-user rate, floored by the Year-2 floor percentage.',
+/**
+ * Step2Scope's Year-2 input (decision from the CM Calculator meeting with
+ * Rohit, 2026-07-13; supersedes the earlier "How many do you expect by the
+ * end of Year 2?" absolute-headcount question): the AM enters a whole-percent
+ * expected growth figure instead. Question hint is Rohit's own wording.
+ */
+export const DP_GROWTH_PCT_QUESTION: QuestionCopy = {
+  question: 'Expected annual growth (%)',
+  why: 'What percentage do you expect your data-principal base to grow by the end of Year 2?',
+}
+
+/**
+ * Derives the absolute Year-2 data-principal base from a whole-percent
+ * growth figure over the Year-1 base. `inputs.dp_base_y2` stays the
+ * persisted engine field (untouched shape for the engine and any
+ * pre-existing records) — this is the only place that turns the AM's
+ * percent input into that stored absolute; recomputed whenever either the
+ * Year-1 base or the growth percent changes. Mirrors
+ * questionnaireImport.ts's computeDpBaseY2 percent branch exactly (kept
+ * duplicated rather than shared, since lib code must not import from src/am).
+ */
+export function dpBaseY2FromGrowth(dpBaseY1: number, growthPct: number): number {
+  return Math.round(dpBaseY1 * (1 + growthPct / 100))
+}
+
+/**
+ * Inverse of dpBaseY2FromGrowth — the whole-percent growth a persisted
+ * dp_base_y2 represents over dp_base_y1. Used only to prefill the growth-%
+ * input when opening an existing draft (dp_base_y2 is the field that's
+ * actually persisted, not the percent). Returns 0 for a zero/blank Year-1
+ * base rather than dividing by zero.
+ */
+export function growthPctFromBases(dpBaseY1: number, dpBaseY2: number): number {
+  if (dpBaseY1 <= 0) return 0
+  return Math.round(((dpBaseY2 - dpBaseY1) / dpBaseY1) * 100)
 }
 
 const ESTATE_QUESTIONS: Record<string, QuestionCopy> = {

@@ -1,6 +1,7 @@
 import type { RateCard, SaasInfraBasis, SaasTier } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
+import PctInput from './PctInput'
 import {
   SAAS_PRICING_EXPLAINER,
   basisSwitchPreview,
@@ -221,8 +222,7 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
             SG&amp;A uplift %
             <span className="block text-xs text-slate-400">Markup applied on top of the converted hosting cost.</span>
           </span>
-          <input type="number" min={0} max={1} step={0.01} className={`${inp} w-24 text-right`} value={saas.sgna_uplift_pct}
-            onChange={(e) => patchSaas({ sgna_uplift_pct: toNum(e.target.value) })} />
+          <PctInput value={saas.sgna_uplift_pct} onChange={(fraction) => patchSaas({ sgna_uplift_pct: fraction })} />
         </label>
         <label className="flex items-center justify-between gap-4">
           <span className="text-sm text-slate-700">
@@ -237,16 +237,14 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
             Implementation % (one-time)
             <span className="block text-xs text-slate-400">One-time implementation charge on the licence, billed in Year 1 only.</span>
           </span>
-          <input type="number" min={0} max={1} step={0.01} className={`${inp} w-24 text-right`} value={saas.implementation_pct}
-            onChange={(e) => patchSaas({ implementation_pct: toNum(e.target.value) })} />
+          <PctInput value={saas.implementation_pct} onChange={(fraction) => patchSaas({ implementation_pct: fraction })} />
         </label>
         <label className="flex items-center justify-between gap-4">
           <span className="text-sm text-slate-700">
-            Year-2 floor %
-            <span className="block text-xs text-slate-400">Year 2+ never drops below this share of the Year-1 platform fee.</span>
+            Year-2 renewal %
+            <span className="block text-xs text-slate-400">Year 2+ = this share of the Year-1 platform fee, plus overage on actual Year-2 DPs beyond the bundle.</span>
           </span>
-          <input type="number" min={0} max={1} step={0.01} className={`${inp} w-24 text-right`} value={saas.y2_floor_pct}
-            onChange={(e) => patchSaas({ y2_floor_pct: toNum(e.target.value) })} />
+          <PctInput value={saas.y2_floor_pct} onChange={(fraction) => patchSaas({ y2_floor_pct: fraction })} />
         </label>
       </div>
     </section>

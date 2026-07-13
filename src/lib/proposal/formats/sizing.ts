@@ -11,7 +11,7 @@ import type { ClientSafeProposal } from '../clientSafe'
 import { BOM_NOTES, bomForDpBase } from '../bomData'
 import type { BomRow } from '../bomData'
 import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
-import { findLine, formatINR, formatPerUserRate, traceValue, year2RuleNote } from './shared'
+import { blankIfZero, findLine, formatINR, formatPerUserRate, traceValue, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
 
 // The consent governance bridge sits on the client's premises in EVERY
@@ -37,11 +37,11 @@ function estateConsideredTable(p: ClientSafeProposal): RenderTable | undefined {
   const rows: (string | number)[][] = lines.map((l) => [
     l.label,
     l.qty.toLocaleString('en-IN'),
-    l.unit_rate_inr,
-    l.annual_inr,
+    blankIfZero(l.unit_rate_inr),
+    blankIfZero(l.annual_inr),
   ])
   const subtotal = lines.reduce((sum, l) => sum + l.annual_inr, 0)
-  rows.push(['Subtotal', '', '', subtotal])
+  rows.push(['Subtotal', '', '', blankIfZero(subtotal)])
   return { title: 'Estate Considered', columns: ['Driver', 'Count', 'Unit Rate (₹)', 'Annual (₹)'], rows }
 }
 

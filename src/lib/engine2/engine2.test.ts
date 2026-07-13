@@ -37,55 +37,58 @@ describe('On-Prem CM (Excel parity: Calculator D61–D65)', () => {
   })
 })
 
-describe('SaaS CM (bundled-DP model, 2026-07-13 owner direction, corrected: overage rate = ceil(platform ÷ tier user_cap), whole rupees; the platform fee recurs every year and carries the bundle. Committed 25L tier: platform 38,66,496, cap 25,00,000, rate ceil(1.5465984)=₹2/DP, included 15,00,000)', () => {
-  it('25L tier, growth beyond the bundle (dp 25L both years): Year-1 overage 10,00,000 × ₹2 = 20,00,000 → Y1 60,91,496 / Y2+ (platform + overage) 58,66,496 / 3yr TCO 1,78,24,488', () => {
+describe('SaaS CM (bundled-DP renewal model, 2026-07-13 owner direction, confirmed on the CM Calculator call with Rohit: Year 1 = implementation + platform fee + overage on the declared Year-1 base beyond the bundle; Year 2+ = renewal (30% of the platform fee) + overage on actual Year-2 DPs beyond the bundle. Committed 25L tier: platform 38,66,496, cap 25,00,000, rate ceil(1.5465984)=₹2/DP, included 15,00,000, renewal r(0.3×38,66,496)=11,59,949)', () => {
+  it('25L tier, growth beyond the bundle (dp 25L both years): Year-1 overage 10,00,000 × ₹2 = 20,00,000 → Y1 60,91,496; Year 2+ renewal 11,59,949 + overage 20,00,000 = 31,59,949; 3yr TCO 60,91,496 + 2×31,59,949 = 1,24,11,394', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const cm = res.lines[0]
     expect(cm.one_time_inr).toBe(225_000)
     expect(cm.year1_inr).toBe(6_091_496)
-    expect(cm.recurring_inr).toBe(5_866_496)
-    expect(cm.tco_inr).toBe(17_824_488)
+    expect(cm.recurring_inr).toBe(3_159_949)
+    expect(cm.tco_inr).toBe(12_411_394)
     expect(res.saas_per_user_rate).toBe(2)
     expect(res.saas_included_dp).toBe(1_500_000)
   })
 
-  it('at the bundle (dp_y1 = dp_y2 = 15L): no overage; Y1 40,91,496; recurring 38,66,496 (= platform exactly)', () => {
+  it('at the bundle (dp_y1 = dp_y2 = 15L): no overage either year; Y1 40,91,496; recurring is the renewal alone, 11,59,949', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 1_500_000, dp_base_y2: 1_500_000 })
     const cm = res.lines[0]
     expect(cm.year1_inr).toBe(4_091_496)
-    expect(cm.recurring_inr).toBe(3_866_496)
+    expect(cm.recurring_inr).toBe(1_159_949)
   })
 
-  it('growth: Y2 base 30L over the 15L bundle adds (30,00,000 − 15,00,000) × ₹2 on top of the recurring platform fee', () => {
+  it('growth: Y2 base 30L over the 15L bundle adds (30,00,000 − 15,00,000) × ₹2 on top of the renewal', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 3_000_000 })
-    // platform 38,66,496 + overage 15,00,000 × 2 = 30,00,000 → 68,66,496
-    expect(res.lines[0].recurring_inr).toBe(6_866_496)
+    // renewal 11,59,949 + overage 15,00,000 × 2 = 30,00,000 → 41,59,949
+    expect(res.lines[0].recurring_inr).toBe(4_159_949)
   })
 
-  it('shrink: Y2 base 4L under the 15L bundle has zero overage — the platform fee still recurs in full, floor guard does not bind', () => {
+  it('shrink: Y2 base 4L under the 15L bundle has zero overage — Year 2+ is the renewal alone (no overage on actuals to add)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 400_000 })
-    const floor = Math.round(0.3 * 3_866_496) // 11,59,949
-    expect(floor).toBeLessThan(3_866_496)
-    expect(res.lines[0].recurring_inr).toBe(3_866_496)
+    const renewal = Math.round(0.3 * 3_866_496) // 11,59,949
+    expect(res.lines[0].recurring_inr).toBe(renewal)
   })
 
-  it('Year-2 floor is a lower bound (guard, matches MAX in the engine)', () => {
+  it('Year 2+ recurring is never below the renewal (overage on actuals is additive and never negative)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
-    expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(Math.round(0.3 * 3_866_496))
+    const renewal = Math.round(0.3 * 3_866_496) // 11,59,949
+    expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(renewal)
   })
 
-  it('Tier-0 owner anchor: dp 3L (at the bundle) → platform 22,76,880, rate ceil(4.5538)=₹5/DP, Y1 25,01,880 (no overage)', () => {
+  it('Tier-0 owner anchor: dp 3L (at the bundle) → platform 22,76,880, rate ceil(4.5538)=₹5/DP, Y1 25,01,880 (no overage); recurring is the renewal alone, 6,83,064 (canonical quote: ~₹25.0L Year 1, ~₹6.8L/yr after)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 300_000, dp_base_y2: 300_000 })
     const cm = res.lines[0]
     // infra = 650*12*83*1.2 = 7,76,880; platform = 15,00,000 + 7,76,880 = 22,76,880; cap 5,00,000 → ceil(22,76,880/5,00,000) = ceil(4.5538) = 5
     expect(res.saas_included_dp).toBe(300_000)
     expect(res.saas_per_user_rate).toBe(5)
     expect(cm.year1_inr).toBe(2_501_880)
+    expect(cm.recurring_inr).toBe(683_064)
   })
 
-  it('Tier-0 at cap (dp 5L, still tier0, bundle still 3L): Year-1 overage 2,00,000 × ₹5 = 10,00,000 → Y1 35,01,880', () => {
+  it('Tier-0 at cap (dp 5L, still tier0, bundle still 3L): Year-1 overage 2,00,000 × ₹5 = 10,00,000 → Y1 35,01,880 (matches the meeting worked case 22.76+2.25+10 lakh); recurring renewal 6,83,064 + overage 10,00,000 = 16,83,064', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 500_000, dp_base_y2: 500_000 })
-    expect(res.lines[0].year1_inr).toBe(3_501_880)
+    const cm = res.lines[0]
+    expect(cm.year1_inr).toBe(3_501_880)
+    expect(cm.recurring_inr).toBe(1_683_064)
   })
 
   it('legacy reproduction: ceil(platform ÷ tier cap) at the onprem_ref basis reproduces the historical 7/4/3/2/2 overage column exactly, one tier at a time', () => {
@@ -99,20 +102,34 @@ describe('SaaS CM (bundled-DP model, 2026-07-13 owner direction, corrected: over
     })
   })
 
-  it('infra basis switch (D1): onprem_ref reprices the 25L tier from $1,980 to $3,671/mo; at the bundle preserves the historical Y1', () => {
+  it('infra basis switch (D1): onprem_ref reprices the 25L tier from $1,980 to $3,671/mo; at the bundle preserves the historical Y1 and derives the renewal from the onprem_ref platform', () => {
     const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: 'onprem_ref' as const } }
     const res = price(card, { ...base, deployment_mode: 'saas', dp_base_y1: 1_500_000, dp_base_y2: 1_500_000 })
     // 3671*12*83*1.2 = 43,87,579.2 → 43,87,579; platform = 58,87,579; at the bundle, no overage → Y1 = 61,12,579
     expect(res.lines[0].year1_inr).toBe(6_112_579)
+    // renewal = round(0.3 × 58,87,579) = 17,66,274; no overage at the bundle → recurring = renewal
+    expect(res.lines[0].recurring_inr).toBe(1_766_274)
   })
 
-  it('trace includes the bundle/overage steps for saas, never for onprem', () => {
+  it('trace includes the bundle/overage/renewal steps for saas with the correct render kinds, never for onprem', () => {
     const saasRes = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const onpremRes = price(RATE_CARD_SEED, base)
-    for (const label of ['Included DP bundle', 'Overage rate', 'Year 1 overage']) {
+    for (const label of [
+      'Included DP bundle',
+      'Overage rate',
+      'Year 1 overage',
+      'Year 2+ renewal (30% of platform)',
+      'Year 2+ overage (billed on actuals)',
+      'Year 2+ total',
+    ]) {
       expect(saasRes.trace.some((s) => s.label === label)).toBe(true)
       expect(onpremRes.trace.some((s) => s.label === label)).toBe(false)
     }
+    const step = (label: string) => saasRes.trace.find((s) => s.label === label)!
+    expect(step('SaaS tier').kind).toBe('usd')
+    expect(step('Included DP bundle').kind).toBe('count')
+    expect(step('Included DP bundle').formula).toContain('all consent actions')
+    expect(step('Overage rate').kind).toBe('rate')
   })
 })
 
@@ -234,11 +251,12 @@ describe('totals, discount, compare, trace', () => {
   it('priceAllModes reproduces Model Comparison D27/E27/F27 (3yr TCO)', () => {
     const all = priceAllModes(RATE_CARD_SEED, base)
     expect(all.onprem.total_tco_inr).toBe(6_240_000)
-    // base carries dp 25L both years — beyond the 15L bundle, so hybrid/saas TCO
-    // include Year-1/Year-2+ overage on top of the recurring platform fee
-    // (bundled-DP model, 2026-07-13 owner direction, corrected overage rate)
-    expect(all.hybrid.total_tco_inr).toBe(17_824_488)
-    expect(all.saas.total_tco_inr).toBe(17_824_488)
+    // base carries dp 25L both years — beyond the 15L bundle, so hybrid/saas Y1
+    // includes Year-1 overage, and Year 2+ is the renewal (30% of platform) plus
+    // overage on actuals (bundled-DP renewal model, 2026-07-13 owner direction,
+    // confirmed on the CM Calculator call with Rohit)
+    expect(all.hybrid.total_tco_inr).toBe(12_411_394)
+    expect(all.saas.total_tco_inr).toBe(12_411_394)
   })
 
   it('every published number has a trace path; determinism holds', () => {

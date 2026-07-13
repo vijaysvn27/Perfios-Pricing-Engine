@@ -62,6 +62,27 @@ function isTotalRow(firstCell: string | number): boolean {
   return /total|tco/i.test(String(firstCell))
 }
 
+/** Column letter for a 1-based column index (e.g. 2 -> 'B'). */
+function colLetter(ws: ExcelJS.Worksheet, col1: number): string {
+  return ws.getColumn(col1).letter
+}
+
+/**
+ * Tables where formula auto-generation is safe: every numeric column shares
+ * the same "line item -> TOTAL" shape (Year 1..Year N columns rolling up
+ * into a TOTAL row, or a single Annual column rolling up into a Subtotal
+ * row). The compare-mode "Your Options" table mixes row semantics in the
+ * same columns (a "CM Year 1" row and a "CM Annual" row share the same
+ * On-Prem/Hybrid/SaaS columns) — a generic block-sum there could silently
+ * misstate a total, so it deliberately keeps plain numbers.
+ */
+function isCommercialSummaryTable(title: string): boolean {
+  return /^commercial summary/i.test(title)
+}
+function isEstateConsideredTable(title: string): boolean {
+  return title === 'Estate Considered'
+}
+
 /** Writes a single paragraph cell, applying the Honda "INCLUDED CONSENTS"
  * callout treatment (light green fill, bold banner-blue text) whenever the
  * paragraph starts with "Included:" — the included-DP note (shared.ts
@@ -79,6 +100,30 @@ function writeParagraph(ws: ExcelJS.Worksheet, row: number, colCount: number, te
   c.alignment = { wrapText: true, vertical: 'top' }
 }
 
+/**
+ * Writes a data/table body, turning TOTAL/Subtotal/TCO cells into real
+ * ExcelJS formulas — `{ formula, result }` — instead of plain numbers, so an
+ * AM editing a line-item figure sees the total recalculate (owner: totals
+ * must be live formulas, not frozen numbers). The cached `result` keeps the
+ * number visible to any viewer that doesn't recalc.
+ *
+ * Two shapes are recognised (see isCommercialSummaryTable /
+ * isEstateConsideredTable):
+ *  - Commercial-summary-shaped tables (`Component | Year 1..N | N-Year TCO`):
+ *    every row's TCO cell = a row-wise SUM of its own Year columns; a TOTAL
+ *    row's Year cells = a column-wise SUM of the contiguous block of rows
+ *    above it. `blockStart` tracks that block: it resets to the current row
+ *    whenever a TOTAL row is written, so a List/Discount/Net trio correctly
+ *    sums List+Discount into Net (not the line items twice).
+ *  - Estate Considered (`Driver | Count | Unit Rate | Annual`): only the
+ *    Subtotal row's Annual cell gets a column-wise SUM of the Annual values
+ *    above it.
+ * Every other table keeps plain numbers, the safe default.
+ *
+ * Blank-not-zero (owner: "Fields not included in the pricing should be left
+ * empty"): a literal numeric 0 — however it got here — renders as an empty
+ * cell, never "₹0" or a stray SUM of nothing.
+ */
 function writeTable(ws: ExcelJS.Worksheet, table: RenderTable, startRow: number): number {
   let r = startRow
   table.columns.forEach((text, i) => {
@@ -91,13 +136,39 @@ function writeTable(ws: ExcelJS.Worksheet, table: RenderTable, startRow: number)
   })
   r += 1
 
+  const commercial = isCommercialSummaryTable(table.title)
+  const estate = isEstateConsideredTable(table.title)
+  const lastCol = table.columns.length
+  let blockStart = r // first row of the contiguous block the next TOTAL row sums
+
   table.rows.forEach((row, idx) => {
     const total = isTotalRow(row[0])
     row.forEach((val, i) => {
       const c = ws.getRow(r).getCell(i + 1)
-      c.value = val
+      const display: string | number = typeof val === 'number' && val === 0 ? '' : val
+      const isNumber = typeof display === 'number'
+      let cellValue: ExcelJS.CellValue = display
+
+      if (isNumber && commercial) {
+        if (i === lastCol - 1) {
+          // TCO column: row-wise sum of this row's own Year cells.
+          const from = colLetter(ws, 2)
+          const to = colLetter(ws, lastCol - 1)
+          cellValue = { formula: `SUM(${from}${r}:${to}${r})`, result: display }
+        } else if (total && i > 0) {
+          // A Year column on a TOTAL/List/Net row: column-wise sum of the
+          // block immediately above.
+          const col = colLetter(ws, i + 1)
+          cellValue = { formula: `SUM(${col}${blockStart}:${col}${r - 1})`, result: display }
+        }
+      } else if (isNumber && estate && total && i === lastCol - 1) {
+        const col = colLetter(ws, i + 1)
+        cellValue = { formula: `SUM(${col}${blockStart}:${col}${r - 1})`, result: display }
+      }
+
+      c.value = cellValue
       c.border = thinBorder()
-      if (typeof val === 'number') {
+      if (isNumber) {
         c.numFmt = INR
         c.alignment = { horizontal: 'right' }
       } else if (i === 0) {
@@ -110,6 +181,7 @@ function writeTable(ws: ExcelJS.Worksheet, table: RenderTable, startRow: number)
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA } }
       }
     })
+    if (total) blockStart = r // this total's own row joins the next block (List/Discount/Net)
     r += 1
   })
   return r
@@ -136,9 +208,15 @@ function writeCover(
   const brandRow = band(r)
   if (logo) {
     const imageId = wb.addImage({ buffer: logo, extension: 'png' })
-    ws.addImage(imageId, { tl: { col: 0.15, row: r - 1 + 0.15 }, ext: { width: 118, height: 81 } })
+    // Owner fix ("Perfios logo in excel proposal is not correct"): the
+    // source asset is 900x619 (aspect ≈1.454); anchor it top-left at a fixed
+    // ~140x96 px size (140/96 ≈1.458, matching that aspect) instead of the
+    // previous 118x81 box stretched across the banner row. A small inset
+    // keeps it off the cell edge; the row is tall enough to hold it without
+    // cropping.
+    ws.addImage(imageId, { tl: { col: 0.12, row: r - 1 + 0.1 }, ext: { width: 140, height: 96 } })
     brandRow.value = ''
-    ws.getRow(r).height = 60
+    ws.getRow(r).height = 76
   } else {
     brandRow.value = 'PERFIOS'
     brandRow.font = { bold: true, size: 20, color: { argb: PRIMARY } }

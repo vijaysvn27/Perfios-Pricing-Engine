@@ -8,6 +8,8 @@ import {
   basisSwitchPreview,
   buildSampleDeal,
   estateRateDescription,
+  inputToPct,
+  pctToInput,
   pickSaasTier,
   saasVsOnPremYear1,
   tierDerivedRate,
@@ -163,6 +165,60 @@ describe('buildSampleDeal', () => {
   it('honours an explicit TCO horizon', () => {
     const d = buildSampleDeal({ dp_base: 1, deployment_mode: 'onprem', dspm: false, dam: false, endpoint: false, quantities: {}, tco_years: 5 })
     expect(d.tco_years).toBe(5)
+  })
+
+  it("WorkedExample's default sample (5,00,000 DP, SaaS, 3yr TCO — the owner's canonical demo case): Y1 35,01,880, Year 2+ 16,83,064 (renewal 6,83,064 + overage 2,00,000 × ₹5 = 10,00,000)", () => {
+    const deal = buildSampleDeal({
+      dp_base: 500_000,
+      deployment_mode: 'saas',
+      dspm: false,
+      dam: false,
+      endpoint: false,
+      quantities: {},
+    })
+    const res = price(RATE_CARD_SEED, deal)
+    const cm = res.lines[0]
+    expect(cm.year1_inr).toBe(3_501_880)
+    expect(cm.recurring_inr).toBe(1_683_064)
+  })
+})
+
+describe('pctToInput / inputToPct (percent-input boundary conversion)', () => {
+  it('converts stored fractions to whole-percent display values', () => {
+    expect(pctToInput(0.18)).toBe(18)
+    expect(pctToInput(0.3)).toBe(30)
+    expect(pctToInput(0.2)).toBe(20)
+    expect(pctToInput(0.15)).toBe(15)
+    expect(pctToInput(0.12)).toBe(12)
+  })
+
+  it('converts whole-percent input values back to stored fractions', () => {
+    expect(inputToPct(18)).toBe(0.18)
+    expect(inputToPct(30)).toBe(0.3)
+    expect(inputToPct(20)).toBe(0.2)
+    expect(inputToPct(15)).toBe(0.15)
+    expect(inputToPct(12)).toBe(0.12)
+  })
+
+  it('round-trips every seed percent field without float artifacts', () => {
+    const fractions = [
+      RATE_CARD_SEED.onprem_cm.deployment_pct,
+      RATE_CARD_SEED.onprem_cm.support_pct,
+      RATE_CARD_SEED.saas_cm.sgna_uplift_pct,
+      RATE_CARD_SEED.saas_cm.implementation_pct,
+      RATE_CARD_SEED.saas_cm.y2_floor_pct,
+      RATE_CARD_SEED.estate.deployment_pct,
+      RATE_CARD_SEED.estate.amc_pct,
+    ]
+    for (const f of fractions) {
+      // exact round-trip: no 0.18000000000000002-style artifacts
+      expect(inputToPct(pctToInput(f))).toBe(f)
+    }
+  })
+
+  it('18 -> 0.18 -> 18 round-trips exactly (owner example)', () => {
+    expect(inputToPct(pctToInput(inputToPct(18)))).toBe(18)
+    expect(pctToInput(inputToPct(18))).toBe(18)
   })
 })
 

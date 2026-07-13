@@ -1,6 +1,7 @@
 import type { EstateBucket, EstateRate, RateCard } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
+import PctInput from './PctInput'
 import { estateRateDescription, type UpdateCard } from './helpers'
 
 interface Props {
@@ -93,30 +94,14 @@ export default function EstateGroup({ estate, update }: Props) {
             Deployment % (one-time)
             <span className="block text-xs text-slate-400">One-time deployment charge on each module&apos;s base, billed in Year 1 only.</span>
           </span>
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            className={`${inp} w-24 text-right`}
-            value={estate.deployment_pct}
-            onChange={(e) => patchPct({ deployment_pct: toNum(e.target.value) })}
-          />
+          <PctInput value={estate.deployment_pct} onChange={(fraction) => patchPct({ deployment_pct: fraction })} />
         </label>
         <label className="flex items-center justify-between gap-4">
           <span className="text-sm text-slate-700">
             AMC % (annual)
             <span className="block text-xs text-slate-400">Annual maintenance on each module&apos;s base, on top of the recurring base.</span>
           </span>
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            className={`${inp} w-24 text-right`}
-            value={estate.amc_pct}
-            onChange={(e) => patchPct({ amc_pct: toNum(e.target.value) })}
-          />
+          <PctInput value={estate.amc_pct} onChange={(fraction) => patchPct({ amc_pct: fraction })} />
         </label>
       </div>
     </section>

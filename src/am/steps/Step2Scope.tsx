@@ -3,15 +3,18 @@
 // Question wording mirrors the finalized DPDP Pricing Questionnaire style:
 // short question + one-line "why we ask" hint. Estate rows come from the
 // LOADED rate card (keys/labels from estate.rates), never hardcoded.
+import { useState } from 'react'
 import type { DeploymentMode, RateCard } from '../../lib/engine2/types'
 import type { ProposalDraft, ProposalInputs } from '../../lib/proposal/proposalsRepo'
 import { card, inp, toNum } from '../../admin/styles'
 import {
   DP_BASE_Y1_QUESTION,
-  DP_BASE_Y2_QUESTION,
+  DP_GROWTH_PCT_QUESTION,
   MODE_LABELS,
   SAAS_MODULE_NOTE,
+  dpBaseY2FromGrowth,
   estateQuestion,
+  growthPctFromBases,
   visibleEstateRates,
   type ModuleFlags,
 } from '../wizardLogic'
@@ -34,10 +37,21 @@ function indianCountHint(n: number): string {
   return n > 0 ? `= ${n.toLocaleString('en-IN')} data principals` : 'Enter a count — Indian grouping shown here.'
 }
 
+function approxDpHint(n: number): string {
+  return `≈ ${n.toLocaleString('en-IN')} DPs`
+}
+
 export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
   const { inputs } = draft
   const isSaas = inputs.deployment_mode === 'saas'
   const estateRates = visibleEstateRates(rateCard.estate.rates, inputs.deployment_mode, inputs.modules)
+
+  // Growth-% is UI-local (decision from the CM Calculator call with Rohit,
+  // 2026-07-13): only the derived absolute (inputs.dp_base_y2) is persisted,
+  // so the percent itself is re-derived from the two persisted bases on
+  // mount — see wizardLogic.growthPctFromBases — and kept in sync here
+  // whenever either the base or the percent changes.
+  const [growthPct, setGrowthPct] = useState(() => growthPctFromBases(inputs.dp_base_y1, inputs.dp_base_y2))
 
   function setQty(rateKey: string, value: string) {
     const n = Math.max(0, Math.trunc(toNum(value)))
@@ -107,24 +121,30 @@ export default function Step2Scope({ draft, rateCard, updateInputs }: Props) {
             min={0}
             step={1}
             value={inputs.dp_base_y1}
-            onChange={(e) => updateInputs({ dp_base_y1: Math.max(0, Math.trunc(toNum(e.target.value))) })}
+            onChange={(e) => {
+              const y1 = Math.max(0, Math.trunc(toNum(e.target.value)))
+              updateInputs({ dp_base_y1: y1, dp_base_y2: dpBaseY2FromGrowth(y1, growthPct) })
+            }}
             className={`mt-1 w-44 text-right ${inp}`}
           />
           <span className="ml-2 text-xs text-slate-400">{indianCountHint(inputs.dp_base_y1)}</span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">{DP_BASE_Y2_QUESTION.question}</span>
-          <p className="text-xs text-slate-400">{DP_BASE_Y2_QUESTION.why}</p>
+          <span className="text-sm font-medium text-slate-700">{DP_GROWTH_PCT_QUESTION.question}</span>
+          <p className="text-xs text-slate-400">{DP_GROWTH_PCT_QUESTION.why}</p>
           <input
             type="number"
-            min={0}
             step={1}
-            value={inputs.dp_base_y2}
-            onChange={(e) => updateInputs({ dp_base_y2: Math.max(0, Math.trunc(toNum(e.target.value))) })}
+            value={growthPct}
+            onChange={(e) => {
+              const pct = Math.trunc(toNum(e.target.value))
+              setGrowthPct(pct)
+              updateInputs({ dp_base_y2: dpBaseY2FromGrowth(inputs.dp_base_y1, pct) })
+            }}
             className={`mt-1 w-44 text-right ${inp}`}
           />
-          <span className="ml-2 text-xs text-slate-400">{indianCountHint(inputs.dp_base_y2)}</span>
+          <span className="ml-2 text-xs text-slate-400">{approxDpHint(inputs.dp_base_y2)}</span>
         </label>
       </div>
 
