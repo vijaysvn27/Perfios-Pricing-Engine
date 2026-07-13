@@ -126,7 +126,7 @@ describe('applyPricingOverrides', () => {
     expect(cmLine(adjusted).years_inr).toEqual([4_440_000, 900_000, 900_000]) // untouched
     expect(adjusted.total_years_inr).toEqual([4_583_000, 1_000_000, 1_023_200])
     expect(adjusted.total_recurring_inr).toBe(1_000_000)
-    expect(adjusted.total_tco_inr).toBe(6_606_400) // 6,240,000 + 366,200
+    expect(adjusted.total_tco_inr).toBe(6_606_200) // 6,240,000 + 366,200
   })
 
   it('ignores negative and non-finite overrides (cell stays at list)', () => {
