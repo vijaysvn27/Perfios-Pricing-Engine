@@ -8,7 +8,8 @@ import type { RateCard } from '../../lib/engine2/types'
 import { scanForBlocklist, toClientSafe } from '../../lib/proposal/clientSafe'
 import { buildFormat, type FormatKind } from '../../lib/proposal/formats'
 import { exportProposalXlsx } from '../../lib/proposal/excelExport'
-import { bomForDpBase } from '../../lib/proposal/bomData'
+import { exportProposalDocx } from '../../lib/proposal/wordExport'
+import { bomForDpBase, BOM_NOTES } from '../../lib/proposal/bomData'
 import { buildNarrative } from '../../lib/proposal/narrative'
 import type { ProposalDraft } from '../../lib/proposal/proposalsRepo'
 import { btn, card, inp } from '../../admin/styles'
@@ -31,43 +32,8 @@ const FORMATS: { kind: FormatKind; label: string; hint: string }[] = [
   { kind: 'perfios', label: 'Perfios format', hint: 'Client Proposal layout (comparison layout in compare mode).' },
 ]
 
-// Print only the preview: hide everything, then reveal the .print-root
-// subtree and pin it to the page origin so nav/steps/panel never print.
-// -webkit-print-color-adjust/print-color-adjust keep the brand-blue cover
-// band and table header fills from being stripped by the browser's print
-// pipeline; page-break-inside avoids splitting a table or section across pages.
-//
-// PRINT header/footer (document design language spec): fixed-position bands
-// so every printed page repeats "Perfios DPDP Suite · {customer}" + the doc
-// title (top) and the confidentiality line (bottom) — 7.5pt/7pt, muted grey
-// #5B6472, with a #D7DEE8 hairline. Page numbers via CSS counters are
-// unreliable across print engines, so they're deliberately omitted; the
-// confidentiality line is the only footer content.
-const PRINT_CSS = `
-@media print {
-  @page { size: A4; margin: 14mm; }
-  body * { visibility: hidden; }
-  .print-root, .print-root * { visibility: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .print-root { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 18mm 0 14mm 0; border: none; font-family: Arial, Helvetica, sans-serif; }
-  .print-root table, .print-root .proposal-section, .print-root .cover-band { page-break-inside: avoid; }
-  .print-header, .print-footer { display: block; }
-  .print-header {
-    position: fixed; top: 0; left: 14mm; right: 14mm;
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 7.5pt; color: #5B6472; border-bottom: 1px solid #D7DEE8; padding-bottom: 3mm;
-  }
-  .print-footer {
-    position: fixed; bottom: 0; left: 14mm; right: 14mm;
-    font-size: 7pt; color: #5B6472; border-top: 1px solid #D7DEE8; padding-top: 2mm;
-  }
-}
-@media screen {
-  .print-header, .print-footer { display: none; }
-}
-`
-
-/** Fetch the bundled logo as raw bytes for the Excel export's embedded image.
- * Falls back to undefined (the wordmark) if the asset can't be loaded. */
+/** Fetch the bundled logo as raw bytes for the Excel/Word exports' embedded
+ * image. Falls back to undefined (the wordmark) if the asset can't be loaded. */
 async function fetchLogoBuffer(): Promise<ArrayBuffer | undefined> {
   try {
     const res = await fetch(logoUrl)
@@ -136,17 +102,29 @@ export default function Step4Present({ draft, rateCard, updateInputs, onSave, sa
     }
   }
 
-  async function onPrint() {
+  async function onExportWord() {
     if (!(await guardAndSave())) return
-    window.print()
+    const bom = includeBom(draft.inputs.deployment_mode, draft.inputs.modules)
+      ? bomForDpBase(draft.inputs.dp_base_y1)
+      : undefined
+    try {
+      const logo = await fetchLogoBuffer()
+      await exportProposalDocx(model, {
+        bom,
+        bomNotes: BOM_NOTES,
+        logo,
+        customer: draft.customer_name,
+        filename: proposalFilename(draft.customer_name).replace(/\.xlsx$/, '.docx'),
+      })
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const hasCustomer = draft.customer_name.trim().length > 0
 
   return (
     <div className="space-y-4">
-      <style>{PRINT_CSS}</style>
-
       <div className={card}>
         <span className="text-sm font-medium text-slate-700">Presentation format</span>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -183,8 +161,8 @@ export default function Step4Present({ draft, rateCard, updateInputs, onSave, sa
           <button type="button" className={btn} disabled={saving || !hasCustomer} onClick={() => void onExportExcel()}>
             Download Excel
           </button>
-          <button type="button" className={btn} disabled={saving || !hasCustomer} onClick={() => void onPrint()}>
-            Print / PDF
+          <button type="button" className={btn} disabled={saving || !hasCustomer} onClick={() => void onExportWord()}>
+            Download Word
           </button>
           {!hasCustomer && (
             <span className="text-xs text-amber-600">Enter a customer name (Step 1) to export.</span>
@@ -219,15 +197,8 @@ export default function Step4Present({ draft, rateCard, updateInputs, onSave, sa
         </label>
       </div>
 
-      <div className={`print-root ${card}`}>
-        <div className="print-header">
-          <span>Perfios DPDP Suite &middot; {draft.customer_name || 'the client'}</span>
-          <span>{model.title}</span>
-        </div>
+      <div className={card}>
         <RenderModelView model={model} />
-        <div className="print-footer">
-          Private &amp; Confidential — prepared by Perfios for {draft.customer_name || 'the client'}
-        </div>
       </div>
     </div>
   )

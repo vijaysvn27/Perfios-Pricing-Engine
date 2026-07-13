@@ -1,13 +1,15 @@
 // "Sizing Estimate" section (Honda "DSPM DAM Sizing" pattern): a transparent
 // count x rate breakdown for selected estate modules, plus SaaS/Hybrid
 // platform sizing (committed base, tier, per-user rate, Year-2+ rule) and,
-// for On-Prem, a pointer to the "Infrastructure You Provide" annexure. Shown
-// only when there is something to size: an estate module is selected, or the
-// deployment mode itself carries a transparent per-user rate (SaaS/Hybrid).
-// CM-only On-Prem has nothing new to add here (its infra is already covered
-// by the BOM annexure, without a sizing narrative), so the section is absent.
+// for On-Prem, the ACTUAL "Infrastructure You Provide" BOM inline (owner
+// feedback 2026-07-13: infra sizing must appear IN the proposal body, not
+// just be pointed at via an annexure). Hybrid keeps its estate infra as a
+// standing TBD, confirmed with the data-security partner during
+// implementation — the Consentick BOM is the CM On-Prem BOM, and in Hybrid
+// the CM is Perfios-hosted, so that BOM does not apply there.
 import type { ClientSafeProposal } from '../clientSafe'
-import { BOM_NOTES } from '../bomData'
+import { BOM_NOTES, bomForDpBase } from '../bomData'
+import type { BomRow } from '../bomData'
 import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
 import { findLine, formatPerUserRate, includedDpNote, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
@@ -22,18 +24,6 @@ function hostingFootprint(mode: DeploymentMode): string {
   return mode === 'hybrid'
     ? 'Perfios-hosted, India region; the consent governance bridge and the data-security components run on your premises.'
     : 'Perfios-hosted, India region; a lightweight consent governance bridge runs on your premises to enforce consent against your systems.'
-}
-
-function anyEstateModuleSelected(p: ClientSafeProposal): boolean {
-  const { dspm, dam, endpoint } = p.inputs.modules
-  return dspm || dam || endpoint
-}
-
-/** Whether the "Sizing Estimate" section has anything to show: a selected
- * estate module, or a deployment mode (SaaS/Hybrid) with a transparent
- * per-user platform rate to publish. */
-export function showSizingEstimate(p: ClientSafeProposal): boolean {
-  return anyEstateModuleSelected(p) || p.inputs.deployment_mode !== 'onprem'
 }
 
 /** "Estate Considered" table: one row per sizing line (already filtered to
@@ -68,26 +58,69 @@ function platformSizingParagraphs(p: ClientSafeProposal, result: ModeResult): st
   const tier = tierLabel(result.trace)
   const perUserRate = result.saas_per_user_rate
   const includedNote = includedDpNote(p)
-  return [
+  const paragraphs = [
     `Committed base: ${p.inputs.dp_base_y1.toLocaleString('en-IN')} data principals${tier ? ` (${tier} tier)` : ''}`,
     hostingFootprint(p.inputs.deployment_mode),
     ...(includedNote ? [includedNote] : []),
     ...(perUserRate !== undefined ? [`Per-user rate: ${formatPerUserRate(perUserRate)} per user per year`] : []),
     year2RuleNote(result.trace),
   ]
+  if (p.inputs.deployment_mode === 'hybrid') {
+    paragraphs.push(
+      'On-premise footprint for the data-security components (DSPM/DAM) is confirmed with our data security ' +
+        'partner during implementation planning.',
+    )
+  }
+  return paragraphs
 }
 
-function onPremPointerParagraph(): string {
-  return `See the "Infrastructure You Provide" annexure for the full on-prem hardware sizing. ${BOM_NOTES}`
+/** BOM_NOTES (DR strategy, RPO/RTO, traffic-model assumption) plus the
+ * standing "figures are reference architecture" caveat — accompanies the
+ * On-Prem BOM tables inline in the proposal body. */
+function onPremSizingParagraphs(): string[] {
+  return [
+    BOM_NOTES,
+    'Final sizing is confirmed during implementation planning; figures are the reference architecture for your ' +
+      'committed data-principal base.',
+  ]
 }
 
-/** Build the "Sizing Estimate" section, or undefined when there's nothing to
- * size (CM-only On-Prem). `result` is the single priced mode this format is
+/** One BOM table section — Nodes/vCPU/RAM rendered as strings (not numbers)
+ * so the generic table renderers don't currency-format a hardware count the
+ * same way estateConsideredTable's Count column avoids it. */
+function bomTableSection(heading: string, rows: BomRow[]): RenderSection {
+  const table: RenderTable = {
+    title: heading,
+    columns: ['Component', 'Nodes', 'vCPU/node', 'RAM GB/node', 'Storage/node'],
+    rows: rows.map((r) => [r.component, String(r.nodes), String(r.vcpu), String(r.ram_gb), r.storage]),
+  }
+  return { heading, table }
+}
+
+/** The two On-Prem BOM annexure sections — "Primary Site" and "Cold DR
+ * Site" — sized off the tier matching the deal's committed Year-1 base
+ * (bomForDpBase, same "first cap that fits" rule engine2 uses for pricing). */
+function onPremBomSections(p: ClientSafeProposal): RenderSection[] {
+  const rows = bomForDpBase(p.inputs.dp_base_y1)
+  const primary = rows.filter((r) => r.site === 'primary')
+  const dr = rows.filter((r) => r.site === 'dr')
+  return [bomTableSection('Primary Site — Infrastructure You Provide', primary), bomTableSection('Cold DR Site', dr)]
+}
+
+/**
+ * Build the "Sizing Estimate" section(s): the transparent sizing narrative
+ * (SaaS/Hybrid platform sizing, or the On-Prem BOM caveat) and Estate
+ * Considered table, always as the first entry — followed, for pure On-Prem
+ * deals only, by the two "Infrastructure You Provide" BOM tables (Primary
+ * Site, Cold DR Site) inline in the proposal body. Hybrid never gets the CM
+ * On-Prem BOM (its CM is Perfios-hosted); its estate infra is called out as
+ * a standing TBD confirmed with the data-security partner during
+ * implementation. `result` is the single priced mode this format is
  * rendering for (single-mode Perfios format only — compare mode's three
- * simultaneous modes have no one deployment_mode to key the platform-sizing
- * / on-prem-pointer branch off, so it does not get this section). */
-export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): RenderSection | undefined {
-  if (!showSizingEstimate(p)) return undefined
+ * simultaneous modes have no one deployment_mode to key this off, so it
+ * does not get this section).
+ */
+export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): RenderSection[] {
   // findLine asserts the CM line exists; called for its side effect of
   // failing loudly if a future mode ever ships a result without one.
   findLine(result, 'cm')
@@ -95,11 +128,13 @@ export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): R
   const table = estateConsideredTable(p)
   const paragraphs: string[] = []
   if (mode === 'saas' || mode === 'hybrid') paragraphs.push(...platformSizingParagraphs(p, result))
-  if (mode === 'onprem') paragraphs.push(onPremPointerParagraph())
+  if (mode === 'onprem') paragraphs.push(...onPremSizingParagraphs())
 
-  return {
+  const mainSection: RenderSection = {
     heading: 'Sizing Estimate',
     ...(table ? { table } : {}),
     ...(paragraphs.length > 0 ? { paragraphs } : {}),
   }
+
+  return mode === 'onprem' ? [mainSection, ...onPremBomSections(p)] : [mainSection]
 }

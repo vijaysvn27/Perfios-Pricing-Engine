@@ -129,38 +129,101 @@ describe('inclusions & exclusions (item 2)', () => {
   it('names unselected modules explicitly under exclusions (on-prem, nothing selected)', () => {
     const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
     const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
-    expect(bullets).toContain('DSPM — not in current scope; available as an add-on.')
-    expect(bullets).toContain('DAM — not in current scope; available as an add-on.')
-    expect(bullets).toContain('Endpoint Discovery / DLP — not in current scope; available as an add-on.')
+    expect(bullets).toContain('DSPM — not in current scope; available as a priced add-on.')
+    expect(bullets).toContain('DAM — not in current scope; available as a priced add-on.')
+    expect(bullets).toContain('Endpoint Discovery / DLP — not in current scope; available as a priced add-on.')
   })
 
   it('a selected module is described with its quantities under inclusions, and dropped from exclusions', () => {
     const model = buildFormat('perfios', compareClientSafe(compareInputs), FIXED_DATE)
     const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
     expect(bullets.some((b) => b.startsWith('DSPM') && b.includes('10 databases'))).toBe(true)
-    expect(bullets).not.toContain('DSPM — not in current scope; available as an add-on.')
-    expect(bullets).toContain('DAM — not in current scope; available as an add-on.')
+    expect(bullets).not.toContain('DSPM — not in current scope; available as a priced add-on.')
+    expect(bullets).toContain('DAM — not in current scope; available as a priced add-on.')
   })
 
   it('SaaS mode excludes every estate module regardless of toggles', () => {
     const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
     const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
-    expect(bullets).toContain('DSPM — not in current scope; available as an add-on.')
-    expect(bullets).toContain('DAM — not in current scope; available as an add-on.')
+    expect(bullets).toContain('DSPM — not in current scope; available as a priced add-on.')
+    expect(bullets).toContain('DAM — not in current scope; available as a priced add-on.')
   })
 
   it('always carries the standard inclusions and exclusions', () => {
     const model = buildFormat('module_wise', clientSafe(onpremInputs), FIXED_DATE)
     const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
     expect(bullets.some((b) => /^Support/.test(b))).toBe(true)
-    expect(bullets).toContain('Applicable taxes.')
+    expect(bullets.some((b) => /^Applicable taxes/.test(b))).toBe(true)
+  })
+
+  it('lists the 7 detailed Consent Manager capability bullets, each with real substance (not one cram-bullet)', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
+    for (const label of [
+      'Consent Notice & Templates',
+      'Data Principal Rights Portal (DPAR)',
+      'Cookie Consent Manager',
+      'Consent Governance (Consent Bridge)',
+      'Consent Breach Module',
+      'Vendor / Third-Party Module',
+      'DPIA',
+    ]) {
+      expect(bullets.some((b) => b.includes(label))).toBe(true)
+    }
+    expect(bullets).toContain('Unlimited consents and consent actions per data principal — no per-transaction charges.')
+  })
+
+  it('groups inclusions and exclusions under labelled sub-headings', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
+    for (const label of [
+      'Platform & Licences:',
+      'Delivery & Implementation:',
+      'Support & Maintenance:',
+      'Data-blind by design:',
+      'Commercial exclusions:',
+      'Scope exclusions:',
+      'Client responsibilities (not Perfios-provided):',
+    ]) {
+      expect(bullets).toContain(label)
+    }
+  })
+
+  it('quantifies the DSPM line with the actual scoped estate counts when selected', () => {
+    const model = buildFormat('perfios', clientSafe(compareInputs), FIXED_DATE)
+    const bullets = sectionBullets(model, (h) => /inclusions & exclusions/i.test(h))
+    const dspmBullet = bullets.find((b) => b.startsWith('DSPM —'))
+    expect(dspmBullet).toBeDefined()
+    expect(dspmBullet).toContain('10 databases')
+    expect(dspmBullet).toContain('100 GDrive/OneDrive users')
+    expect(dspmBullet).toContain('5 virtual machines')
+    expect(dspmBullet).toMatch(/data lineage and automated RoPA included/)
+  })
+
+  it('carries the On-Prem client-responsibility bullets (infra, network, OS/DB licences) only for On-Prem', () => {
+    const onpremModel = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const onpremBullets = sectionBullets(onpremModel, (h) => /inclusions & exclusions/i.test(h))
+    expect(onpremBullets.some((b) => /^Infrastructure — provisioned by you/.test(b))).toBe(true)
+    expect(onpremBullets.some((b) => /^Network and firewall provisioning/.test(b))).toBe(true)
+    expect(onpremBullets.some((b) => /^Operating-system and database licences/.test(b))).toBe(true)
+
+    const saasModel = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
+    const saasBullets = sectionBullets(saasModel, (h) => /inclusions & exclusions/i.test(h))
+    expect(saasBullets.some((b) => /^Infrastructure — provisioned by you/.test(b))).toBe(false)
+  })
+
+  it('is blocklist-clean and never names the data security partner', () => {
+    for (const inputs of [onpremInputs, saasInputs, compareInputs]) {
+      const model = buildFormat('perfios', clientSafe(inputs), FIXED_DATE)
+      expect(scanForBlocklist(model)).toEqual([])
+    }
   })
 })
 
 describe('perfiosFormat (single mode)', () => {
   const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
 
-  it('has the narrative leading sections, the 6 numbered sections (no Sizing Estimate — CM-only On-Prem), then the certifications and closing sections', () => {
+  it('has the narrative leading sections, the 9 numbered sections (Sizing Estimate + inline On-Prem BOM annexure, present even for CM-only On-Prem), then the certifications and closing sections', () => {
     expect(model.sections.map((s) => s.heading)).toEqual([
       'Executive Summary',
       'Solution Overview',
@@ -169,8 +232,11 @@ describe('perfiosFormat (single mode)', () => {
       '2. Commercial Summary (INR, exclusive of taxes)',
       '3. Inclusions & Exclusions',
       '4. Scope & Coverage',
-      '5. What Drives Your Price',
-      '6. Payment Terms',
+      '5. Sizing Estimate',
+      '6. Primary Site — Infrastructure You Provide',
+      '7. Cold DR Site',
+      '8. What Drives Your Price',
+      '9. Payment Terms',
       'Certifications & Delivery Assurance',
       'One Partner, One Accountable Outcome',
     ])
@@ -206,12 +272,12 @@ describe('perfiosFormat (single mode)', () => {
   })
 
   it('"What Drives Your Price" uses the on-prem price-driver copy', () => {
-    const section = model.sections.find((s) => s.heading === '5. What Drives Your Price')
+    const section = model.sections.find((s) => /what drives your price/i.test(s.heading))
     expect(section?.paragraphs?.[0]).toMatch(/no hosting charge from us/)
   })
 
   it('"Payment Terms" includes the validity days', () => {
-    const bullets = sectionBullets(model, (h) => h === '6. Payment Terms')
+    const bullets = sectionBullets(model, (h) => /payment terms/i.test(h))
     expect(bullets.some((b) => b.includes('Validity 60 days'))).toBe(true)
   })
 
@@ -234,16 +300,39 @@ describe('perfiosFormat (single mode)', () => {
 })
 
 describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () => {
-  it('absent for CM-only On-Prem — nothing to size beyond the BOM annexure', () => {
+  it('present for CM-only On-Prem too — infra is needed even without estate modules, so the BOM shows inline (owner feedback: infra sizing must be in the proposal body)', () => {
     const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
-    expect(model.sections.some((s) => /sizing estimate/i.test(s.heading))).toBe(false)
+    expect(model.sections.some((s) => /sizing estimate/i.test(s.heading))).toBe(true)
+    const primary = model.sections.find((s) => /primary site — infrastructure you provide/i.test(s.heading))
+    const dr = model.sections.find((s) => /cold dr site/i.test(s.heading))
+    expect(primary?.table?.columns).toEqual(['Component', 'Nodes', 'vCPU/node', 'RAM GB/node', 'Storage/node'])
+    expect(primary?.table?.rows.some((r) => r[0] === 'MySQL primary + standby')).toBe(true)
+    expect(dr?.table?.rows.some((r) => String(r[0]).includes('MongoDB'))).toBe(true)
   })
 
-  it('present when an estate module is selected on On-Prem, pointing to the infra annexure', () => {
+  it('present when an estate module is selected on On-Prem, with the inline BOM annexure sections following it', () => {
     const model = buildFormat('perfios', clientSafe(compareInputs), FIXED_DATE)
     const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
     expect(section).toBeDefined()
-    expect(section?.paragraphs?.some((p) => /Infrastructure You Provide/.test(p))).toBe(true)
+    expect(section?.paragraphs?.some((p) => /RPO < 15 min/.test(p))).toBe(true)
+    expect(
+      section?.paragraphs?.some((p) => /reference architecture for your committed data-principal base/.test(p)),
+    ).toBe(true)
+    const headings = model.sections.map((s) => s.heading)
+    expect(headings.some((h) => /primary site — infrastructure you provide/i.test(h))).toBe(true)
+    expect(headings.some((h) => /cold dr site/i.test(h))).toBe(true)
+  })
+
+  it('Hybrid never gets the inline CM On-Prem BOM (its CM is Perfios-hosted) — estate infra is a standing TBD confirmed with the data security partner', () => {
+    const hybridInputs: DealInputs = { ...saasInputs, deployment_mode: 'hybrid' }
+    const model = buildFormat('perfios', clientSafe(hybridInputs), FIXED_DATE)
+    const headings = model.sections.map((s) => s.heading)
+    expect(headings.some((h) => /primary site/i.test(h))).toBe(false)
+    expect(headings.some((h) => /cold dr site/i.test(h))).toBe(false)
+    const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+    const text = (section?.paragraphs ?? []).join(' ')
+    expect(text).toMatch(/data-security components \(DSPM\/DAM\) is confirmed with our data security partner/)
+    expect(scanForBlocklist(model)).toEqual([])
   })
 
   it('present for SaaS even with no estate module selected — transparent platform sizing', () => {

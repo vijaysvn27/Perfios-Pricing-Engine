@@ -104,9 +104,10 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
 
 /**
  * Numbers each core section 1..N as it's appended — dynamic, not hardcoded,
- * so the optional "Sizing Estimate" section (present only when there's
- * something to size — see sizing.ts) never leaves a numbering gap or forces
- * every other heading to be re-literaled by hand.
+ * so the "Sizing Estimate" section(s) (always present for a single-mode
+ * build: platform sizing for SaaS/Hybrid, the inline infra BOM for On-Prem —
+ * see sizing.ts) never leave a numbering gap or force every other heading to
+ * be re-literaled by hand.
  */
 function numberedSections(entries: RenderSection[]): RenderSection[] {
   return entries.map((s, i) => ({ ...s, heading: `${i + 1}. ${s.heading}` }))
@@ -118,7 +119,7 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
   const driver = mode === 'onprem' ? ONPREM_PRICE_DRIVER : SAAS_HYBRID_PRICE_DRIVER
   const title = 'Commercial Proposal'
 
-  const sizing = buildSizingSection(p, result)
+  const sizingSections = buildSizingSection(p, result)
   const includedNote = includedDpNote(p)
 
   const core = numberedSections([
@@ -126,7 +127,7 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
     { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialSummaryTable(p, result) },
     { ...buildInclusionsExclusionsSection(p), heading: 'Inclusions & Exclusions' },
     { heading: 'Scope & Coverage', table: scopeTable(p) },
-    ...(sizing ? [sizing] : []),
+    ...sizingSections,
     { heading: 'What Drives Your Price', paragraphs: [driver, ...(includedNote ? [includedNote] : [])] },
     { heading: 'Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
   ])
