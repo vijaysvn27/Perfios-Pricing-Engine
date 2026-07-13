@@ -18,7 +18,7 @@ import { validateRateCard, type RateCardError } from './validate'
 const TABLE = 'rate_cards'
 const DRAFT_VERSION = 0
 
-export type RateCardSource = 'supabase' | 'seed'
+export type RateCardSource = 'supabase' | 'seed' | 'inherited'
 
 export interface PublishedRateCard {
   card: RateCard
@@ -39,6 +39,23 @@ export interface RateCardVersionRow {
   version: number
   created_at: string
   created_by: string | null
+}
+
+/**
+ * Display label for the rate-card source "chip" shown in the AM wizard's
+ * PricePanel — null means no chip ('supabase' is the normal, unremarkable
+ * case: this instance has its own published rate card). Pure and exported so
+ * the chip text is unit-testable without a live Supabase connection.
+ */
+export function rateCardSourceChipLabel(source: RateCardSource): string | null {
+  switch (source) {
+    case 'seed':
+      return 'seed rates'
+    case 'inherited':
+      return 'master rates'
+    case 'supabase':
+      return null
+  }
 }
 
 /** Thrown by publishDraft when the draft fails validateRateCard. Nothing is published. */
@@ -110,9 +127,35 @@ export function normalizeRateCard(raw: unknown): RateCard {
 }
 
 /**
+ * The template instance's id (instances.is_template = true), or null if
+ * there isn't one / the instances table isn't there yet / the query errors
+ * for any other reason. Mirrors instancesRepo.ts's table/column names
+ * (instances.id, instances.is_template) without importing any UI code.
+ * Swallows every error rather than throwing — this is a best-effort
+ * inheritance lookup, not a hard dependency of loadPublishedRateCard.
+ */
+async function templateInstanceId(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.from('instances').select('id').eq('is_template', true).limit(1).maybeSingle()
+    if (error) return null
+    return data?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Latest published rate card for an instance. Falls back to RATE_CARD_SEED
  * (version 0, source 'seed') if the table doesn't exist yet or nothing has
- * been published. Never throws for a missing table.
+ * been published anywhere. Never throws for a missing table.
+ *
+ * Inheritance (owner: "If I change the price in the master then Supabase
+ * should also reflect that" — instances are cloned off the template and
+ * should track its tuned rates until they publish their own): when THIS
+ * instance has no published row of its own, fall back to the TEMPLATE
+ * instance's latest published card (source: 'inherited') before falling
+ * back further to the seed. Looked up directly (no recursive call) and
+ * guarded against the template instance looking up itself.
  */
 export async function loadPublishedRateCard(instanceId: string): Promise<PublishedRateCard> {
   const { data, error } = await supabase
@@ -128,8 +171,24 @@ export async function loadPublishedRateCard(instanceId: string): Promise<Publish
     if (isMissingTable(error)) return { card: RATE_CARD_SEED, version: 0, source: 'seed' }
     throw new Error(`loadPublishedRateCard failed: ${error.message}`)
   }
-  if (!data) return { card: RATE_CARD_SEED, version: 0, source: 'seed' }
-  return { card: normalizeRateCard(data.snapshot), version: data.version, source: 'supabase' }
+  if (data) return { card: normalizeRateCard(data.snapshot), version: data.version, source: 'supabase' }
+
+  const templateId = await templateInstanceId()
+  if (templateId && templateId !== instanceId) {
+    const { data: templateRow, error: templateErr } = await supabase
+      .from(TABLE)
+      .select('version,snapshot')
+      .eq('instance_id', templateId)
+      .eq('status', 'published')
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!templateErr && templateRow) {
+      return { card: normalizeRateCard(templateRow.snapshot), version: templateRow.version, source: 'inherited' }
+    }
+  }
+
+  return { card: RATE_CARD_SEED, version: 0, source: 'seed' }
 }
 
 /**

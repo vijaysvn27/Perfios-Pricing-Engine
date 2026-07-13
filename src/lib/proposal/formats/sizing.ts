@@ -3,14 +3,19 @@
 // platform sizing (committed base, tier, per-user rate, Year-2+ rule) and,
 // for On-Prem, the ACTUAL "Infrastructure You Provide" BOM inline (owner
 // feedback 2026-07-13: infra sizing must appear IN the proposal body, not
-// just be pointed at via an annexure). Hybrid keeps its estate infra as a
-// standing TBD, confirmed with the data-security partner during
-// implementation — the Consentick BOM is the CM On-Prem BOM, and in Hybrid
-// the CM is Perfios-hosted, so that BOM does not apply there.
+// just be pointed at via an annexure). The Consentick BOM is the CM On-Prem
+// BOM, and in Hybrid the CM is Perfios-hosted, so that BOM does not apply
+// there — but Hybrid (and On-Prem) DO get the real data-security (DSPM/DAM)
+// reference architecture — cloud dataplane + on-premise estate — inline when
+// those modules are selected (owner verdict 2026-07-13: sizing must be
+// generated from the real reference architectures, not left as a bare TBD).
+// SaaS always gets the Consent Bridge client-side footprint (the bridge runs
+// on the client's premises in every hosted mode — see hostingFootprint).
 import type { ClientSafeProposal } from '../clientSafe'
 import { BOM_NOTES, bomForDpBase } from '../bomData'
 import type { BomRow } from '../bomData'
-import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
+import { aurvaCloudDataplane, aurvaOnPremEstate, cmBridgeFootprint, endpointNote } from '../infraSizing'
+import type { DealInputs, DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
 import { blankIfZero, findLine, formatPerUserRate, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
 
@@ -109,18 +114,46 @@ function onPremBomSections(p: ClientSafeProposal): RenderSection[] {
   return [bomTableSection('Primary Site — Infrastructure You Provide', primary), bomTableSection('Cold DR Site', dr)]
 }
 
+/** Cloud accounts/VPCs in scope for the data-security dataplane: the
+ * cloud_connector count when set, else the account count — either way, one
+ * dataplane deploys per account/VPC (see infraSizing.aurvaCloudDataplane). */
+function cloudAccountsInScope(estate_quantities: DealInputs['estate_quantities']): number {
+  const connectors = estate_quantities['cloud_connector'] ?? 0
+  return connectors > 0 ? connectors : estate_quantities['account'] ?? 0
+}
+
+/** The data-security (DSPM/DAM) reference-architecture sections — cloud
+ * dataplane (per account/VPC) + on-premise estate (sized off the database
+ * count) — appended whenever DSPM or DAM is selected. Applies to On-Prem and
+ * Hybrid alike (SaaS never carries these modules — the wizard disables the
+ * toggles, and buildSizingSection never calls this for saas). */
+function dataSecurityEstateSections(p: ClientSafeProposal): RenderSection[] {
+  const { modules, estate_quantities } = p.inputs
+  if (!modules.dspm && !modules.dam) return []
+  return [
+    aurvaCloudDataplane(cloudAccountsInScope(estate_quantities)),
+    aurvaOnPremEstate(estate_quantities['database'] ?? 0),
+  ]
+}
+
 /**
  * Build the "Sizing Estimate" section(s): the transparent sizing narrative
  * (SaaS/Hybrid platform sizing, or the On-Prem BOM caveat) and Estate
- * Considered table, always as the first entry — followed, for pure On-Prem
- * deals only, by the two "Infrastructure You Provide" BOM tables (Primary
- * Site, Cold DR Site) inline in the proposal body. Hybrid never gets the CM
- * On-Prem BOM (its CM is Perfios-hosted); its estate infra is called out as
- * a standing TBD confirmed with the data-security partner during
- * implementation. `result` is the single priced mode this format is
- * rendering for (single-mode Perfios format only — compare mode's three
- * simultaneous modes have no one deployment_mode to key this off, so it
- * does not get this section).
+ * Considered table, always as the first entry — followed by:
+ *  - On-Prem: the two "Infrastructure You Provide" BOM tables (Primary Site,
+ *    Cold DR Site) inline, then — when DSPM/DAM is selected — the
+ *    data-security reference architecture (cloud dataplane + on-premise
+ *    estate).
+ *  - SaaS/Hybrid: the Consent Bridge client-side footprint (the bridge runs
+ *    on the client's premises in every hosted mode), then — for Hybrid, when
+ *    DSPM/DAM is selected — the same data-security reference architecture
+ *    (Hybrid never gets the CM On-Prem BOM, since its CM is Perfios-hosted).
+ *  - Any mode with Endpoint Discovery/DLP selected gets the endpoint note
+ *    appended to the main section's paragraphs.
+ * `result` is the single priced mode this format is rendering for
+ * (single-mode Perfios format only — compare mode's three simultaneous modes
+ * have no one deployment_mode to key this off, so it does not get this
+ * section).
  */
 export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): RenderSection[] {
   // findLine asserts the CM line exists; called for its side effect of
@@ -131,6 +164,9 @@ export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): R
   const paragraphs: string[] = []
   if (mode === 'saas' || mode === 'hybrid') paragraphs.push(...platformSizingParagraphs(p, result))
   if (mode === 'onprem') paragraphs.push(...onPremSizingParagraphs())
+  if (mode !== 'saas' && p.inputs.modules.endpoint) {
+    paragraphs.push(endpointNote(p.inputs.estate_quantities['endpoint_device'] ?? 0))
+  }
 
   const mainSection: RenderSection = {
     heading: 'Sizing Estimate',
@@ -138,5 +174,17 @@ export function buildSizingSection(p: ClientSafeProposal, result: ModeResult): R
     ...(paragraphs.length > 0 ? { paragraphs } : {}),
   }
 
-  return mode === 'onprem' ? [mainSection, ...onPremBomSections(p)] : [mainSection]
+  const sections: RenderSection[] = [mainSection]
+
+  if (mode === 'onprem') {
+    sections.push(...onPremBomSections(p))
+    sections.push(...dataSecurityEstateSections(p))
+  } else if (mode === 'hybrid') {
+    sections.push(cmBridgeFootprint(p.inputs.dp_base_y1))
+    sections.push(...dataSecurityEstateSections(p))
+  } else {
+    sections.push(cmBridgeFootprint(p.inputs.dp_base_y1))
+  }
+
+  return sections
 }

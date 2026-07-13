@@ -45,13 +45,15 @@ export function visibleEstateRates(rates: EstateRate[], mode: DeploymentMode, mo
 /**
  * Estate rate keys whose Scope-step QUESTION is retired (owner direction
  * 2026-07-13, fewer wizard questions): 'onprem_connector' is redundant with
- * the data-centre count, and 'sharepoint_site' / 'dam_dataset' aren't needed
- * as separate asks. The rate-card rates for these keys are untouched — a
- * deal can still carry a non-zero quantity (from an imported questionnaire
- * or an older draft) and it prices exactly the same; only the INPUT is
- * hidden from new data entry. See askedEstateRates / hiddenEstateRatesWithValue.
+ * the data-centre count, and 'dam_dataset' isn't needed as a separate ask.
+ * 'sharepoint_site' is asked again (owner correction, 2026-07-13: SharePoint
+ * is its own priced line, per account — not folded into gdrive_user). The
+ * rate-card rates for these keys are untouched — a deal can still carry a
+ * non-zero quantity (from an imported questionnaire or an older draft) and
+ * it prices exactly the same; only the INPUT is hidden from new data entry.
+ * See askedEstateRates / hiddenEstateRatesWithValue.
  */
-export const HIDDEN_ESTATE_KEYS: readonly string[] = ['onprem_connector', 'sharepoint_site', 'dam_dataset']
+export const HIDDEN_ESTATE_KEYS: readonly string[] = ['onprem_connector', 'dam_dataset']
 
 /** The estate questions Step2Scope actually asks: visibleEstateRates minus
  * the retired HIDDEN_ESTATE_KEYS questions. */
@@ -332,16 +334,16 @@ const ESTATE_QUESTIONS: Record<string, QuestionCopy> = {
     why: 'Each data centre needs its own collection footprint.',
   },
   gdrive_user: {
-    question: 'How many M365 / Google Workspace users? (mail, drive, OneDrive, SharePoint)',
-    why: 'Drives the file-store scanning scope for DSPM.',
+    question: 'How many GDrive / OneDrive users?',
+    why: 'Drives file-store scanning scope for DSPM.',
   },
   vm: {
     question: 'How many virtual machines are in scope?',
     why: 'VMs holding local data are scanned individually.',
   },
   sharepoint_site: {
-    question: 'How many SharePoint sites?',
-    why: 'Each site collection is crawled for personal data.',
+    question: 'How many SharePoint accounts?',
+    why: 'Each SharePoint account is priced for discovery scanning.',
   },
   dam_dataset: {
     question: 'How many structured datasets should DAM monitor?',

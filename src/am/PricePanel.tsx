@@ -8,7 +8,7 @@ import { price, priceAllModes } from '../lib/engine2/engine2'
 import type { DeploymentMode, ModeResult, RateCard, TraceStep } from '../lib/engine2/types'
 import { formatINR } from '../lib/format'
 import { fmtPct, netYearsOf } from '../lib/proposal/formats/shared'
-import type { RateCardSource } from '../lib/rateCard/repo'
+import { rateCardSourceChipLabel, type RateCardSource } from '../lib/rateCard/repo'
 import type { ProposalInputs } from '../lib/proposal/proposalsRepo'
 import { MODE_LABELS } from './wizardLogic'
 
@@ -132,6 +132,7 @@ export default function PricePanel({ card, version, source, inputs }: Props) {
   // The trace always follows the currently selected deployment mode, even in
   // compare view — that is the mode the AM is actively shaping.
   const traced = compare && all ? all[inputs.deployment_mode] : single
+  const sourceChipLabel = rateCardSourceChipLabel(source)
 
   return (
     <aside className="sticky top-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -141,9 +142,13 @@ export default function PricePanel({ card, version, source, inputs }: Props) {
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
             rate card v{version}
           </span>
-          {source === 'seed' && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-              seed rates
+          {sourceChipLabel && (
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                source === 'seed' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+              }`}
+            >
+              {sourceChipLabel}
             </span>
           )}
         </div>

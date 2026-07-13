@@ -369,11 +369,12 @@ describe('perfiosFormat (single mode)', () => {
     expect(scope.rows).toContainEqual(['Infrastructure / hosting', 'Perfios-hosted'])
     expect(JSON.stringify(scope)).not.toContain('Not available')
     // Heading number is found by regex, not hardcoded: SaaS mode always carries
-    // a Usage-Based Items section plus a Sizing Estimate section (transparent
-    // platform sizing), which shift every following numbered heading up
-    // versus the CM-only On-Prem case.
+    // a Usage-Based Items section plus two Sizing sections (the transparent
+    // platform-sizing "Sizing Estimate" and the Consent Bridge client-side
+    // footprint reference table), which shift every following numbered
+    // heading up versus the CM-only On-Prem case.
     const driver = saasModel.sections.find((s) => /what drives your price/i.test(s.heading))
-    expect(driver?.heading).toBe('7. What Drives Your Price')
+    expect(driver?.heading).toBe('8. What Drives Your Price')
     expect(driver?.paragraphs?.[0]).toMatch(/Perfios hosts the platform/)
   })
 })
@@ -441,6 +442,90 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
   it('never appears in compare mode (three simultaneous modes have no single deployment_mode to size)', () => {
     const model = buildFormat('perfios', compareClientSafe(compareInputs), FIXED_DATE)
     expect(model.sections.some((s) => /sizing estimate/i.test(s.heading))).toBe(false)
+  })
+
+  describe('reference-architecture sizing (owner verdict 2026-07-13: generate from the real reference architectures)', () => {
+    it('On-Prem + DSPM selected: the data-security cloud dataplane and on-premise estate reference tables appear inline, with a worker count derived from the database qty', () => {
+      // compareInputs: on-prem, DSPM selected, estate_quantities database: 10, cloud_connector: 1.
+      const model = buildFormat('perfios', clientSafe(compareInputs), FIXED_DATE)
+
+      const dataplane = model.sections.find((s) => /data-security dataplane/i.test(s.heading))
+      expect(dataplane).toBeDefined()
+      expect(dataplane?.table?.rows.some((r) => /dataplane/i.test(String(r[0])))).toBe(true)
+      expect(dataplane?.table?.rows.some((r) => String(r[0]) === 'PostgreSQL')).toBe(true)
+      expect((dataplane?.paragraphs ?? []).join(' ')).toMatch(/outbound-only HTTPS \(443\)/)
+      expect((dataplane?.paragraphs ?? []).join(' ')).toMatch(/1 cloud account in scope/)
+
+      const estate = model.sections.find((s) => /data-security estate/i.test(s.heading))
+      expect(estate).toBeDefined()
+      // 10 databases -> max(2, ceil(10 / 60)) = 2 workers.
+      expect(estate?.table?.rows).toContainEqual(['Kubernetes worker nodes', '2', '4', '8', '100 GB each'])
+
+      expect(scanForBlocklist(model)).toEqual([])
+    })
+
+    it('the on-premise estate worker count scales up with a larger database count', () => {
+      const manyDbInputs: DealInputs = {
+        ...compareInputs,
+        estate_quantities: { ...compareInputs.estate_quantities, database: 250 },
+      }
+      const model = buildFormat('perfios', clientSafe(manyDbInputs), FIXED_DATE)
+      const estate = model.sections.find((s) => /data-security estate/i.test(s.heading))
+      // 250 databases -> max(2, ceil(250 / 60)) = 5 workers.
+      expect(estate?.table?.rows.some((r) => r[0] === 'Kubernetes worker nodes' && r[1] === '5')).toBe(true)
+    })
+
+    it('SaaS: the Consent Bridge client-side footprint table appears — Medium profile at the 25L (2,500,000) base, with a MongoDB row', () => {
+      const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
+      const bridge = model.sections.find((s) => /consent bridge/i.test(s.heading))
+      expect(bridge).toBeDefined()
+      expect((bridge?.paragraphs ?? []).join(' ')).toMatch(/Medium profile/)
+      expect(bridge?.table?.rows.some((r) => /MongoDB/.test(String(r[0])))).toBe(true)
+      expect(scanForBlocklist(model)).toEqual([])
+    })
+
+    it('Hybrid + DSPM selected: gets the same data-security reference architecture, alongside the standing partner-confirmation caveat', () => {
+      const hybridWithDspm: DealInputs = {
+        ...saasInputs,
+        deployment_mode: 'hybrid',
+        modules: { dspm: true, dam: false, endpoint: false },
+        estate_quantities: { database: 20, account: 2 },
+      }
+      const model = buildFormat('perfios', clientSafe(hybridWithDspm), FIXED_DATE)
+      const headings = model.sections.map((s) => s.heading)
+      expect(headings.some((h) => /data-security dataplane/i.test(h))).toBe(true)
+      expect(headings.some((h) => /data-security estate/i.test(h))).toBe(true)
+      const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+      const text = (section?.paragraphs ?? []).join(' ')
+      expect(text).toMatch(/confirmed with our data security partner/)
+      expect(scanForBlocklist(model)).toEqual([])
+    })
+
+    it('Endpoint Discovery/DLP selected: the endpoint note appears in the Sizing Estimate paragraphs', () => {
+      const withEndpoint: DealInputs = {
+        ...compareInputs,
+        modules: { dspm: false, dam: false, endpoint: true },
+        estate_quantities: { endpoint_device: 500 },
+      }
+      const model = buildFormat('perfios', clientSafe(withEndpoint), FIXED_DATE)
+      const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+      const text = (section?.paragraphs ?? []).join(' ')
+      expect(text).toMatch(/lightweight agent deployed per device/)
+      expect(text).toMatch(/500 devices/)
+      expect(scanForBlocklist(model)).toEqual([])
+    })
+
+    it('the standing reference-architecture and partner-confirmation caveats are present, and no format ever names the data-security partner', () => {
+      for (const inputs of [onpremInputs, saasInputs, compareInputs]) {
+        const model = buildFormat('perfios', clientSafe(inputs), FIXED_DATE)
+        expect(scanForBlocklist(model)).toEqual([])
+      }
+      const onpremModel = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+      const onpremSizing = onpremModel.sections.find((s) => /sizing estimate/i.test(s.heading))
+      expect((onpremSizing?.paragraphs ?? []).join(' ')).toMatch(
+        /reference architecture for your committed data-principal base/,
+      )
+    })
   })
 
   it('Estate Considered table: qty x unit rate = annual, override-aware, with a Subtotal row', () => {

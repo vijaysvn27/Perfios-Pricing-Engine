@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { RATE_CARD_SEED } from '../engine2/seed'
 import { validateRateCard } from './validate'
-import { isMissingTable, nextVersionAfter, normalizeRateCard } from './repo'
+import { isMissingTable, nextVersionAfter, normalizeRateCard, rateCardSourceChipLabel } from './repo'
 
 // These cover only the pure, separable logic in repo.ts. The read/write paths
 // (loadPublishedRateCard, loadDraft, saveDraft, publishDraft, listVersions,
-// rollback) all call the live Supabase client and are intentionally left
-// untested here — no live connection in this environment.
+// rollback, templateInstanceId) all call the live Supabase client and are
+// intentionally left untested here — no live connection in this environment.
 
 describe('nextVersionAfter', () => {
   it('returns 1 when nothing has been published', () => {
@@ -89,5 +89,19 @@ describe('normalizeRateCard (old-shape Supabase snapshots must never crash the a
   it('handles null/garbage input by returning a seed-shaped card', () => {
     expect(validateRateCard(normalizeRateCard(null))).toEqual([])
     expect(validateRateCard(normalizeRateCard({}))).toEqual([])
+  })
+})
+
+describe('rateCardSourceChipLabel (PricePanel source chip, instance rate-card inheritance)', () => {
+  it('shows "seed rates" for the hardcoded seed fallback', () => {
+    expect(rateCardSourceChipLabel('seed')).toBe('seed rates')
+  })
+
+  it('shows "master rates" for a card inherited from the template instance', () => {
+    expect(rateCardSourceChipLabel('inherited')).toBe('master rates')
+  })
+
+  it('shows no chip when the instance has its own published card', () => {
+    expect(rateCardSourceChipLabel('supabase')).toBeNull()
   })
 })

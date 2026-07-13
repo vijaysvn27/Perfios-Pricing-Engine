@@ -148,7 +148,7 @@ const ESTATE_RATE_DESCRIPTIONS: Record<string, string> = {
   onprem_dc: 'Each on-prem data centre in scope adds to the shared estate base (charged once).',
   gdrive_user: 'Each GDrive/OneDrive user scanned adds to the DSPM-specific base.',
   vm: 'Each virtual machine scanned adds to the DSPM-specific base.',
-  sharepoint_site: 'Each SharePoint site scanned adds to the DSPM-specific base.',
+  sharepoint_site: 'Each SharePoint account scanned adds to the DSPM-specific base.',
   dam_dataset: 'Each structured dataset under activity monitoring adds to the DAM-specific base.',
   endpoint_device: 'Each managed endpoint device adds to the Endpoint base (rate pending final confirmation).',
 }

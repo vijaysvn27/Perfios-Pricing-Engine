@@ -135,7 +135,7 @@ function estateBases(card: RateCard, inputs: DealInputs, trace: TraceStep[]): Es
   if (dspm || dam || inputs.modules.endpoint) {
     trace.push(
       { label: 'Estate shared base', formula: 'databases + cloud connectors + accounts + on-prem connectors + DCs, charged once', result: shared },
-      { label: 'DSPM base', formula: dspm ? 'shared base + GDrive/OneDrive users + VMs + SharePoint sites' : 'DSPM not selected', result: dspmBase },
+      { label: 'DSPM base', formula: dspm ? 'shared base + GDrive/OneDrive users + VMs + SharePoint accounts' : 'DSPM not selected', result: dspmBase },
       { label: 'DAM base', formula: dam ? (dspm ? 'DAM datasets only (shared base already on DSPM)' : 'shared base + DAM datasets') : 'DAM not selected', result: damBase },
       { label: 'Endpoint base', formula: inputs.modules.endpoint ? 'endpoint devices × rate' : 'Endpoint not selected', result: endpointBase },
     )

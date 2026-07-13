@@ -50,7 +50,7 @@ export const RATE_CARD_SEED: RateCard = {
       { rate_key: 'onprem_dc', label: 'On-prem data centre', unit: 'per DC', unit_price_inr: 300_000, provisional: false, bucket: 'shared' },
       { rate_key: 'gdrive_user', label: 'GDrive / OneDrive user', unit: 'per user', unit_price_inr: 800, provisional: false, bucket: 'dspm' },
       { rate_key: 'vm', label: 'Virtual machine', unit: 'per VM', unit_price_inr: 7_000, provisional: false, bucket: 'dspm' },
-      { rate_key: 'sharepoint_site', label: 'SharePoint site', unit: 'per site', unit_price_inr: 12_000, provisional: false, bucket: 'dspm' },
+      { rate_key: 'sharepoint_site', label: 'SharePoint', unit: 'per account', unit_price_inr: 12_000, provisional: false, bucket: 'dspm' },
       { rate_key: 'dam_dataset', label: 'DAM structured dataset', unit: 'per dataset', unit_price_inr: 150_000, provisional: false, bucket: 'dam' },
       { rate_key: 'endpoint_device', label: 'Endpoint device', unit: 'per device', unit_price_inr: 1_600, provisional: true, bucket: 'endpoint' },
     ],

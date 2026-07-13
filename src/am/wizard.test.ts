@@ -81,14 +81,18 @@ describe('visibleEstateRates', () => {
 })
 
 describe('askedEstateRates / hiddenEstateRatesWithValue (fewer wizard questions, owner 2026-07-13)', () => {
-  it('askedEstateRates drops the retired questions (onprem_connector, sharepoint_site, dam_dataset) even when their module is selected', () => {
+  it('askedEstateRates drops the retired questions (onprem_connector, dam_dataset) even when their module is selected', () => {
+    expect(HIDDEN_ESTATE_KEYS).toEqual(['onprem_connector', 'dam_dataset'])
     const asked = askedEstateRates(RATES, 'onprem', { dspm: true, dam: true, endpoint: true })
     for (const key of HIDDEN_ESTATE_KEYS) {
       expect(asked.some((r) => r.rate_key === key)).toBe(false)
     }
-    // everything else in scope is still asked
+    // everything else in scope is still asked, including sharepoint_site
+    // (owner correction 2026-07-13: SharePoint is its own priced line, asked
+    // again rather than folded into gdrive_user)
     expect(asked.some((r) => r.rate_key === 'database')).toBe(true)
     expect(asked.some((r) => r.rate_key === 'gdrive_user')).toBe(true)
+    expect(asked.some((r) => r.rate_key === 'sharepoint_site')).toBe(true)
     expect(asked.some((r) => r.rate_key === 'endpoint_device')).toBe(true)
   })
 
@@ -112,8 +116,10 @@ describe('askedEstateRates / hiddenEstateRatesWithValue (fewer wizard questions,
 
   it('hiddenEstateRatesWithValue: surfaces a hidden key read-only once it carries a non-zero quantity (imported/earlier data)', () => {
     const modules = { dspm: true, dam: true, endpoint: true }
-    const quantities = { onprem_connector: 2, sharepoint_site: 0, dam_dataset: 5 }
+    const quantities = { onprem_connector: 2, sharepoint_site: 9, dam_dataset: 5 }
     const hidden = hiddenEstateRatesWithValue(RATES, 'onprem', modules, quantities)
+    // sharepoint_site is asked again (not hidden), so its quantity never
+    // surfaces here even though it's non-zero.
     expect(keysOf(hidden)).toEqual(['dam_dataset', 'onprem_connector'])
   })
 
@@ -127,11 +133,21 @@ describe('askedEstateRates / hiddenEstateRatesWithValue (fewer wizard questions,
     expect(hidden).toEqual([])
   })
 
-  it('gdrive_user question wording merges M365 / Google Workspace (mail, drive, OneDrive, SharePoint)', () => {
+  it('gdrive_user question wording no longer mentions SharePoint (owner correction 2026-07-13: SharePoint is its own priced line)', () => {
     const gdrive = RATES.find((r) => r.rate_key === 'gdrive_user')
     expect(gdrive).toBeDefined()
     const q = estateQuestion(gdrive!)
-    expect(q.question).toBe('How many M365 / Google Workspace users? (mail, drive, OneDrive, SharePoint)')
+    expect(q.question).toBe('How many GDrive / OneDrive users?')
+    expect(q.question).not.toMatch(/sharepoint/i)
+  })
+
+  it('sharepoint_site question asks for accounts, priced per account', () => {
+    const sharepoint = RATES.find((r) => r.rate_key === 'sharepoint_site')
+    expect(sharepoint).toBeDefined()
+    expect(sharepoint!.label).toBe('SharePoint')
+    expect(sharepoint!.unit).toBe('per account')
+    const q = estateQuestion(sharepoint!)
+    expect(q.question).toBe('How many SharePoint accounts?')
   })
 })
 
