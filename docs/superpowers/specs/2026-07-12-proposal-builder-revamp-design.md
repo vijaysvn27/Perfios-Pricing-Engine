@@ -243,6 +243,48 @@ Hybrid Year-2+ rule in §6 above:
   shrink to 500,000 users bills the floor, 1,766,274 (round(500,000 ×
   2.3550316) = 1,177,516 is below the floor) — the first fixture where the
   floor actually binds.
+  (Figures above are the onprem_ref-basis worked example, preserved for
+  the regression test; see the 2026-07-13 amendment below for the values
+  the seed card now produces by default.)
+
+### Amendment (2026-07-13): default infra basis switched to saas_v3
+
+Source: owner direction, superseding D1's "default stays On-Prem Total"
+(§3 above). Owner's words: "overage is currently built with On-prem
+pricing and not the SaaS infra charges" — the per-user/overage rate for
+SaaS deals must be derived from the SaaS hosting economics (SaaS v3
+column), not the on-prem reference column. Evidence for the switch: at
+Tier-0 (committed 3,00,000) the SaaS v3 basis reprices to ₹7.59/DP, which
+lands almost exactly on the historical ₹7 Tier-0 overage rate — confirming
+SaaS v3 is the commercially correct basis, not On-Prem Total.
+
+- `RATE_CARD_SEED.saas_cm.infra_basis` is now `'saas_v3'` (was
+  `'onprem_ref'`). The admin one-click switch back to `onprem_ref` (D1)
+  remains fully available and fully supported — this changes the seeded
+  default only, not the mechanism.
+- **Worked example (seed 25L tier, saas_v3 basis)**: committed 2,500,000;
+  infra 1980×12×83×1.2 = 2,366,496; platform (licence 1,500,000 + infra) =
+  3,866,496; Y1 = implementation 225,000 + platform = 4,091,496; per-user
+  rate = 3,866,496 ÷ 2,500,000 = 1.5465984 (₹1.55 displayed). Y2 at
+  committed base stays 3,866,496 (round(2,500,000 × 1.5465984) reproduces
+  platform exactly). Y2 growth to 3,000,000 users bills round(3,000,000 ×
+  1.5465984) = 4,639,795. Y2 shrink to 500,000 users: usage
+  round(500,000 × 1.5465984) = 773,299, below the floor
+  round(0.3 × 3,866,496) = 1,159,949, so it bills the floor, 1,159,949.
+  3-year TCO = 4,091,496 + 2×3,866,496 = 11,824,488.
+- The onprem_ref worked example directly above this amendment is kept as
+  the pinned regression fixture (engine2.test.ts asserts a card built with
+  `infra_basis: 'onprem_ref'` still yields Y1 = 6,112,579) — the basis
+  switch changes which column is *active*, not whether the on-prem column
+  still computes correctly.
+- **"Included DPs + overage" proposal framing (Honda pattern)**: the
+  Year-1 platform fee is now explicitly framed as including the committed
+  data-principal base; data principals beyond that base are billed at the
+  per-user rate, on actuals. Every SaaS/Hybrid render surface (saas-style
+  "Your Subscription", Perfios-format "What Drives Your Price", and the
+  Sizing Estimate's Platform Sizing paragraphs) carries this note
+  (`includedDpNote` in `formats/shared.ts`); the Excel export highlights it
+  with the same green callout fill used for Honda's INCLUDED CONSENTS row.
 
 ## 7. AM Proposal Wizard
 

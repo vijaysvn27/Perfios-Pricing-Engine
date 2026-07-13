@@ -37,48 +37,48 @@ describe('On-Prem CM (Excel parity: Calculator D61–D65)', () => {
   })
 })
 
-describe('SaaS CM (2026-07-07 per-user methodology; committed 25L tier: infra 43,87,579, platform 58,87,579, per-user rate 2.3550316)', () => {
-  it('25L committed, no growth: Y1 61,12,579 / Y2+ 58,87,579', () => {
+describe('SaaS CM (2026-07-13: default basis saas_v3, owner direction; committed 25L tier: infra 23,66,496, platform 38,66,496, per-user rate 1.5465984)', () => {
+  it('25L committed, no growth: Y1 40,91,496 / Y2+ 38,66,496', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const cm = res.lines[0]
-    // infra = 3671*12*83*1.2 = 43,87,579.2 → 43,87,579; platform = 58,87,579
-    expect(cm.year1_inr).toBe(6_112_579)
-    expect(cm.recurring_inr).toBe(5_887_579)
+    // infra = 1980*12*83*1.2 = 23,66,496; platform = 38,66,496
+    expect(cm.year1_inr).toBe(4_091_496)
+    expect(cm.recurring_inr).toBe(3_866_496)
     expect(cm.one_time_inr).toBe(225_000)
-    // Model Comparison F27: 1,78,87,737.6 → rounded
-    expect(cm.tco_inr).toBe(17_887_737)
-    expect(res.saas_per_user_rate).toBeCloseTo(2.3550316)
+    // 3-yr TCO = 40,91,496 + 2×38,66,496 = 1,18,24,488
+    expect(cm.tco_inr).toBe(11_824_488)
+    expect(res.saas_per_user_rate).toBeCloseTo(1.5465984)
   })
 
   it('per-user rate at committed usage reproduces the platform fee exactly: round(committed × rate) === platform', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const rate = res.saas_per_user_rate
     expect(rate).toBeDefined()
-    expect(Math.round(base.dp_base_y1 * (rate as number))).toBe(5_887_579)
+    expect(Math.round(base.dp_base_y1 * (rate as number))).toBe(3_866_496)
   })
 
   it('growth: Y2 base 30L over 25L committed bills 30,00,000 users × the per-user rate (replaces the old overage line)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 3_000_000 })
-    // round(30,00,000 × 2.3550316) = 70,65,095
-    expect(res.lines[0].recurring_inr).toBe(7_065_095)
+    // round(30,00,000 × 1.5465984) = 46,39,795
+    expect(res.lines[0].recurring_inr).toBe(4_639_795)
   })
 
   it('shrink: Y2 base 5L under 25L committed floors at 30% of the Year-1 platform fee (floor finally binds)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 500_000 })
-    // usage round(5,00,000 × 2.3550316) = 11,77,516 < floor round(0.3 × 58,87,579) = 17,66,274
-    expect(res.lines[0].recurring_inr).toBe(1_766_274)
+    // usage round(5,00,000 × 1.5465984) = 7,73,299 < floor round(0.3 × 38,66,496) = 11,59,949
+    expect(res.lines[0].recurring_inr).toBe(1_159_949)
   })
 
   it('Year-2 floor is a lower bound (guard, matches MAX in the engine)', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
-    expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(Math.round(0.3 * 5_887_579))
+    expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(Math.round(0.3 * 3_866_496))
   })
 
-  it('infra basis switch (D1): saas_v3 column reprices 25L tier from $3,671 to $1,980/mo', () => {
-    const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: 'saas_v3' as const } }
+  it('infra basis switch (D1): saas_v3 is now the default; onprem_ref remains available and reprices 25L tier from $1,980 back to $3,671/mo', () => {
+    const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: 'onprem_ref' as const } }
     const res = price(card, { ...base, deployment_mode: 'saas' })
-    // 1980*12*83*1.2 = 23,66,496; platform = 38,66,496; Y1 = +2,25,000
-    expect(res.lines[0].year1_inr).toBe(225_000 + 1_500_000 + 2_366_496)
+    // 3671*12*83*1.2 = 43,87,579.2 → 43,87,579; platform = 58,87,579; Y1 = +2,25,000
+    expect(res.lines[0].year1_inr).toBe(6_112_579)
   })
 })
 
@@ -129,7 +129,7 @@ describe('Estate modules (Excel parity: Calculator D79–D92)', () => {
 
   it('Hybrid: CM priced as SaaS, estate still available', () => {
     const res = price(RATE_CARD_SEED, { ...estateInputs, deployment_mode: 'hybrid' })
-    expect(res.lines[0].year1_inr).toBe(6_112_579)
+    expect(res.lines[0].year1_inr).toBe(4_091_496)
     expect(res.lines[1].year1_inr).toBe(5_200_000)
   })
 })
@@ -199,8 +199,8 @@ describe('totals, discount, compare, trace', () => {
   it('priceAllModes reproduces Model Comparison D27/E27/F27 (3yr TCO)', () => {
     const all = priceAllModes(RATE_CARD_SEED, base)
     expect(all.onprem.total_tco_inr).toBe(6_240_000)
-    expect(all.hybrid.total_tco_inr).toBe(17_887_737)
-    expect(all.saas.total_tco_inr).toBe(17_887_737)
+    expect(all.hybrid.total_tco_inr).toBe(11_824_488)
+    expect(all.saas.total_tco_inr).toBe(11_824_488)
   })
 
   it('every published number has a trace path; determinism holds', () => {

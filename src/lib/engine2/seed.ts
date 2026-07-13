@@ -2,7 +2,9 @@ import type { RateCard } from './types'
 
 // Seed = Perfios_CM_Proposal_Builder.xlsx "Rate Card" sheet, verbatim, plus
 // BOTH Consentick_OnPrem_Sizing_AllTiers.xlsx Summary cost columns (D1: the
-// active basis is a setting; the reviewed rate card uses the on-prem column).
+// active basis is a setting, switchable in one click from the admin page).
+// Default basis is saas_v3 as of 2026-07-13 (owner direction — see infra_basis
+// comment below); onprem_ref remains fully supported and selectable.
 export const RATE_CARD_SEED: RateCard = {
   onprem_cm: {
     slabs: [
@@ -22,7 +24,13 @@ export const RATE_CARD_SEED: RateCard = {
       { tier_key: '50l', label: '50L', user_cap: 5_000_000, infra_usd_mo_onprem_ref: 4538, infra_usd_mo_saas_v3: 3089, overage_inr_per_user: 2 },
       { tier_key: '100l', label: '100L', user_cap: 10_000_000, infra_usd_mo_onprem_ref: 7543, infra_usd_mo_saas_v3: 5385, overage_inr_per_user: 2 },
     ],
-    infra_basis: 'onprem_ref',
+    // 2026-07-13 (owner direction, supersedes D1's conservative default):
+    // "overage is currently built with On-prem pricing and not the SaaS
+    // infra charges" — the per-user/overage rate must reflect SaaS hosting
+    // economics. saas_v3 at Tier-0 (committed 3,00,000) reprices to ₹7.59/DP,
+    // matching the historical ₹7 Tier-0 overage rate. The admin one-click
+    // switch back to onprem_ref remains available.
+    infra_basis: 'saas_v3',
     fx_inr_per_usd: 83,
     sgna_uplift_pct: 0.2,
     annual_licence_inr: 1_500_000,

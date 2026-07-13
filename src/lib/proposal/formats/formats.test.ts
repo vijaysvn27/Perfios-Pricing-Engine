@@ -252,9 +252,22 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
     expect(section).toBeDefined()
     const text = (section?.paragraphs ?? []).join(' ')
     expect(text).toMatch(/Committed base: 25,00,000 data principals/)
-    expect(text).toMatch(/Per-user rate: ₹2\.36 per user per year/)
+    expect(text).toMatch(/Included: 25,00,000 data principals in the Year-1 platform fee/)
+    expect(text).toMatch(/Per-user rate: ₹1\.55 per user per year/)
     expect(text).toMatch(/greater of 30% of the Year-1 platform fee/) // Year 2+ rule, shared copy
     expect(text).toMatch(/Perfios-hosted, India region/)
+    // The consent governance bridge sits on the client's premises in EVERY
+    // hosted mode, INCLUDING SaaS (Olivia, Vi call 2026-07-07: "even in SaaS
+    // the consent bridge will always be a part of their premise").
+    expect(text).toMatch(/consent governance bridge runs on your premises/)
+  })
+
+  it('Hybrid sizing also keeps the consent governance bridge (plus data-security components) on premises', () => {
+    const hybridInputs: DealInputs = { ...saasInputs, deployment_mode: 'hybrid' }
+    const model = buildFormat('perfios', clientSafe(hybridInputs), FIXED_DATE)
+    const section = model.sections.find((s) => /sizing estimate/i.test(s.heading))
+    const text = (section?.paragraphs ?? []).join(' ')
+    expect(text).toMatch(/consent governance bridge and the data-security components run on your premises/)
   })
 
   it('never appears in compare mode (three simultaneous modes have no single deployment_mode to size)', () => {
@@ -276,6 +289,41 @@ describe('Sizing Estimate (item: transparent sizing, Perfios format only)', () =
     expect(section?.table?.rows).toContainEqual(['Databases', '10', 5_000, 50_000])
     expect(section?.table?.rows).toContainEqual(['Cloud connectors', '1', 20_000, 20_000])
     expect(section?.table?.rows).toContainEqual(['Subtotal', '', '', 70_000])
+  })
+})
+
+describe('included-DP note (Honda "included DPs + overage" framing)', () => {
+  const hybridInputs: DealInputs = { ...saasInputs, deployment_mode: 'hybrid' }
+
+  it('appears in "What Drives Your Price" for SaaS with the committed base and derived rate (25,00,000 / ₹1.55)', () => {
+    const model = buildFormat('perfios', clientSafe(saasInputs), FIXED_DATE)
+    const driver = model.sections.find((s) => /what drives your price/i.test(s.heading))
+    expect(driver?.paragraphs).toContainEqual(
+      'Included: 25,00,000 data principals in the Year-1 platform fee. Additional data principals beyond the ' +
+        'included base are charged at ₹1.55 per data principal per year, billed on actuals.',
+    )
+  })
+
+  it('appears for Hybrid too (per-user rate applies the same way as SaaS)', () => {
+    const model = buildFormat('perfios', clientSafe(hybridInputs), FIXED_DATE)
+    const driver = model.sections.find((s) => /what drives your price/i.test(s.heading))
+    const text = (driver?.paragraphs ?? []).join(' ')
+    expect(text).toMatch(/Included: 25,00,000 data principals/)
+  })
+
+  it('is absent for On-Prem (no per-user rate to quote)', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    const driver = model.sections.find((s) => /what drives your price/i.test(s.heading))
+    const text = (driver?.paragraphs ?? []).join(' ')
+    expect(text).not.toMatch(/Included:/)
+    expect(JSON.stringify(model)).not.toMatch(/Included: \d/)
+  })
+
+  it('does not break the client-safety blocklist scan for saas/hybrid/onprem', () => {
+    for (const inputs of [onpremInputs, saasInputs, hybridInputs]) {
+      const model = buildFormat('perfios', clientSafe(inputs), FIXED_DATE)
+      expect(scanForBlocklist(model)).toEqual([])
+    }
   })
 })
 
@@ -337,6 +385,59 @@ describe('moduleWise', () => {
     expect(note).toContain('recurs annually')
     expect(note).toMatch(new RegExp(result.total_one_time_inr.toLocaleString('en-IN')))
   })
+
+  describe('"Where Each Capability Is Priced" table', () => {
+    it('is present, right after the commercial table', () => {
+      const model = buildFormat('module_wise', clientSafe(onpremInputs), FIXED_DATE)
+      const headings = model.sections.map((s) => s.heading)
+      const commercialIdx = headings.indexOf('Commercial Summary — Module-wise')
+      const attributionIdx = headings.indexOf('Where Each Capability Is Priced')
+      expect(attributionIdx).toBeGreaterThan(-1)
+      expect(attributionIdx).toBe(commercialIdx + 1)
+      const table = tableFromModel(model, (h) => h === 'Where Each Capability Is Priced')
+      expect(table.columns).toEqual(['Capability', 'Priced Under', 'Notes'])
+    })
+
+    it('the RoPA/lineage row is priced under DSPM / DAM, not Consent Manager', () => {
+      const model = buildFormat('module_wise', clientSafe(onpremInputs), FIXED_DATE)
+      const table = tableFromModel(model, (h) => h === 'Where Each Capability Is Priced')
+      const ropaRow = table.rows.find((r) => r[0] === 'Data lineage & automated RoPA')
+      expect(ropaRow?.[1]).toBe('DSPM / DAM')
+    })
+
+    it('the DPAR row is priced under Consent Manager, bundled', () => {
+      const model = buildFormat('module_wise', clientSafe(onpremInputs), FIXED_DATE)
+      const table = tableFromModel(model, (h) => h === 'Where Each Capability Is Priced')
+      const dparRow = table.rows.find((r) => r[0] === 'Data Principal Rights Portal (DPAR)')
+      expect(dparRow?.[1]).toBe('Consent Manager')
+      expect(dparRow?.[2]).toMatch(/bundled/i)
+    })
+
+    it('scope note follows the module selection: selected module reads "In current scope", others read the add-on note', () => {
+      const model = buildFormat('module_wise', clientSafe(compareInputs), FIXED_DATE)
+      const table = tableFromModel(model, (h) => h === 'Where Each Capability Is Priced')
+      const dspmRow = table.rows.find((r) => r[0] === 'DSPM (discovery & classification)')
+      const damRow = table.rows.find((r) => r[0] === 'DAM (database activity monitoring)')
+      expect(dspmRow?.[2]).toBe('In current scope.')
+      expect(damRow?.[2]).toBe('Not in current scope — available as an add-on.')
+    })
+
+    it('on SaaS, DSPM/DAM/Endpoint all read as not in current scope regardless of module toggles', () => {
+      const model = buildFormat('module_wise', clientSafe(saasInputs), FIXED_DATE)
+      const table = tableFromModel(model, (h) => h === 'Where Each Capability Is Priced')
+      for (const label of ['DSPM (discovery & classification)', 'DAM (database activity monitoring)', 'Endpoint Discovery / DLP']) {
+        const row = table.rows.find((r) => r[0] === label)
+        expect(row?.[2]).toBe('Not in current scope — available as an add-on.')
+      }
+    })
+
+    it('is blocklist-clean', () => {
+      for (const proposal of [clientSafe(onpremInputs), clientSafe(saasInputs), clientSafe(compareInputs)]) {
+        const model = buildFormat('module_wise', proposal, FIXED_DATE)
+        expect(scanForBlocklist(model)).toEqual([])
+      }
+    })
+  })
 })
 
 describe('saasStyle', () => {
@@ -351,11 +452,11 @@ describe('saasStyle', () => {
     expect(text).toMatch(/Year 1 total: ₹/)
   })
 
-  it('states the per-user rate derived from ModeResult.saas_per_user_rate (25L tier: ₹2.36/user/year)', () => {
+  it('states the per-user rate derived from ModeResult.saas_per_user_rate (25L tier, saas_v3 default basis: ₹1.55/user/year)', () => {
     const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
     const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
     const text = (subscription?.paragraphs ?? []).join(' ')
-    expect(text).toMatch(/Per-user rate: ₹2\.36 per user per year/)
+    expect(text).toMatch(/Per-user rate: ₹1\.55 per user per year/)
   })
 
   it('states the Year 2+ rule (greater of the floor % or actual users × the per-user rate)', () => {
@@ -370,6 +471,15 @@ describe('saasStyle', () => {
     const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
     const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
     expect(subscription?.bullets?.some((b) => /net-new data principals/.test(b))).toBe(true)
+  })
+
+  it('leads with the included-DP note as the first highlighted bullet (committed 25,00,000, ₹1.55/DP overage)', () => {
+    const model = buildFormat('saas_style', clientSafe(saasInputs), FIXED_DATE)
+    const subscription = model.sections.find((s) => s.heading === 'Your Subscription')
+    expect(subscription?.bullets?.[0]).toBe(
+      'Included: 25,00,000 data principals in the Year-1 platform fee. Additional data principals beyond the ' +
+        'included base are charged at ₹1.55 per data principal per year, billed on actuals.',
+    )
   })
 
   it('never mentions overage (word-boundary match, distinct from "coverage")', () => {

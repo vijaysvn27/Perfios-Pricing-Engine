@@ -10,6 +10,7 @@ import {
   type ProposalRow,
 } from '../lib/proposal/proposalsRepo'
 import { mergeQuestionnaireInputs, type QuestionnaireImportResult } from '../lib/proposal/questionnaireImport'
+import { downloadQuestionnaireXlsx } from '../lib/proposal/questionnaireExport'
 import { formatINR } from '../lib/format'
 import { btn, btnGreen, card, th } from '../admin/styles'
 import ProposalWizard from './ProposalWizard'
@@ -115,15 +116,30 @@ export default function ProposalsApp({ instanceId }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-1 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-perfios-blue">Proposals</h1>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={btn}
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await downloadQuestionnaireXlsx()
+              })
+            }
+          >
+            Download questionnaire
+          </button>
           <QuestionnaireImportButton onImported={handleQuestionnaireImported} disabled={busy} />
           <button type="button" className={btnGreen} onClick={() => setView({ kind: 'wizard', initial: null })}>
             + New Proposal
           </button>
         </div>
       </div>
+      <p className="mb-4 text-right text-xs text-slate-500">
+        Always download the questionnaire from here — it is the current template and imports back automatically.
+      </p>
 
       {!persisted && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

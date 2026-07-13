@@ -13,6 +13,7 @@ import {
   findLine,
   formatINR,
   formatPerUserRate,
+  includedDpNote,
   netYearsOf,
   traceValue,
   whatYouGetBullets,
@@ -34,6 +35,7 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
   const platformFee = traceValue(result.trace, 'Platform fee (annual)') ?? cm.recurring_inr
   const implementation = traceValue(result.trace, 'Implementation (one-time)') ?? cm.one_time_inr
   const perUserRate = result.saas_per_user_rate
+  const includedNote = includedDpNote(p)
 
   const subscriptionParagraphs = [
     `Committed base: ${p.inputs.dp_base_y1.toLocaleString('en-IN')} data principals`,
@@ -68,7 +70,9 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
       {
         heading: 'Your Subscription',
         paragraphs: subscriptionParagraphs,
-        ...(perUserRate !== undefined ? { bullets: [CONSENT_MODIFICATION_CAVEAT] } : {}),
+        ...(perUserRate !== undefined
+          ? { bullets: [...(includedNote ? [includedNote] : []), CONSENT_MODIFICATION_CAVEAT] }
+          : {}),
       },
       { heading: "What's Included", bullets: whatYouGetBullets() },
       { heading: `Annual Cost Over ${years} Years`, table },

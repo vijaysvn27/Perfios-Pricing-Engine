@@ -6,9 +6,46 @@ import { narrativeSections } from '../narrative'
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
 import { discountTotalRows, formatINR, netYearsOf } from './shared'
-import type { ProposalRenderModel, RenderTable } from './types'
+import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
 const TITLE = 'Commercial Summary — Module-wise'
+
+const ATTRIBUTION_TITLE = 'Where Each Capability Is Priced'
+
+/** Scope note for the DSPM/DAM/Endpoint rows — dynamic, mirrors the "in scope
+ * / add-on" logic inclusions.ts uses for exclusion bullets: SaaS is CM-only,
+ * so every estate module reads as not-in-scope there regardless of toggles. */
+function scopeNote(p: ClientSafeProposal, key: 'dspm' | 'dam' | 'endpoint'): string {
+  const inScope = p.inputs.deployment_mode !== 'saas' && p.inputs.modules[key]
+  return inScope ? 'In current scope.' : 'Not in current scope — available as an add-on.'
+}
+
+/**
+ * "Where Each Capability Is Priced" — answers the module-based pricing
+ * question an AM gets from clients ("what does ROPA/DPAR cost?"): every named
+ * capability, which line item it's actually priced under, and — for the
+ * estate modules — whether it's in scope for this deal. The 7 CM capabilities
+ * and the RoPA/lineage row are static (bundling never changes by deal); the
+ * DSPM/DAM/Endpoint rows always render, with the Notes column reflecting
+ * `inputs.modules` for this specific deal.
+ */
+function buildAttributionSection(p: ClientSafeProposal): RenderSection {
+  const rows: (string | number)[][] = [
+    ['Consent Notice & Templates', 'Consent Manager', 'Bundled, all 7 modules in one price.'],
+    ['Data Principal Rights Portal (DPAR)', 'Consent Manager', 'Bundled.'],
+    ['Cookie Consent Manager', 'Consent Manager', 'Bundled.'],
+    ['Consent Governance (Consent Bridge)', 'Consent Manager', 'Bundled.'],
+    ['Consent Breach Module', 'Consent Manager', 'Bundled.'],
+    ['Vendor / Third-Party Module', 'Consent Manager', 'Bundled.'],
+    ['Data Privacy Risk Assessment (DPIA)', 'Consent Manager', 'Bundled.'],
+    ['Data lineage & automated RoPA', 'DSPM / DAM', 'Delivered with those modules; no standalone charge.'],
+    ['DSPM (discovery & classification)', 'Priced line — per-unit estate rates', scopeNote(p, 'dspm')],
+    ['DAM (database activity monitoring)', 'Priced line — per-unit estate rates', scopeNote(p, 'dam')],
+    ['Endpoint Discovery / DLP', 'Priced line — per-device', scopeNote(p, 'endpoint')],
+  ]
+  const table: RenderTable = { title: ATTRIBUTION_TITLE, columns: ['Capability', 'Priced Under', 'Notes'], rows }
+  return { heading: ATTRIBUTION_TITLE, table }
+}
 
 export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
@@ -48,6 +85,7 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     sections: [
       ...narrativeSections(p),
       { heading: TITLE, table, paragraphs: [note] },
+      buildAttributionSection(p),
       buildInclusionsExclusionsSection(p),
     ],
   }

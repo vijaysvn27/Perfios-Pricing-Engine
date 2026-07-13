@@ -4,6 +4,7 @@
 // discount is (or isn't) shown to the client (D4 in the design doc).
 import type { ComponentLine, ModeResult, TraceStep } from '../../engine2/types'
 import { formatINR } from '../../format'
+import type { ClientSafeProposal } from '../clientSafe'
 
 /** The 7 Consent Manager modules — verbatim copy, used everywhere "What You
  * Get" appears (module-wise implicitly via the CM line label, saas-style,
@@ -42,12 +43,33 @@ export function traceFormula(trace: TraceStep[], label: string): string | undefi
 }
 
 /**
- * Per-user rate, formatted for client copy: "₹2.36 per user per year".
+ * Per-user rate, formatted for client copy: "₹1.55 per user per year".
  * `saas_per_user_rate` is unrounded internally (ModeResult.saas_per_user_rate);
  * this is the one place that rounds it for display.
  */
 export function formatPerUserRate(rate: number): string {
   return `₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/**
+ * "Included DPs + overage" framing (Honda pattern): the Year-1 platform fee
+ * includes the committed data-principal base; data principals beyond that
+ * are charged at the derived per-user rate, billed on actuals. Only
+ * meaningful for SaaS/Hybrid (on-prem has no per-user rate) — returns
+ * undefined when `saas_per_user_rate` is absent so callers can omit the note
+ * entirely rather than render a broken sentence. The leading "Included:"
+ * prefix is intentional: excelExport.ts detects it to apply the green
+ * callout fill (mirrors Honda's INCLUDED CONSENTS callout).
+ */
+export function includedDpNote(p: ClientSafeProposal): string | undefined {
+  const rate = p.results[0]?.saas_per_user_rate
+  if (rate === undefined) return undefined
+  const committed = p.inputs.dp_base_y1.toLocaleString('en-IN')
+  return (
+    `Included: ${committed} data principals in the Year-1 platform fee. ` +
+    `Additional data principals beyond the included base are charged at ${formatPerUserRate(rate)} ` +
+    `per data principal per year, billed on actuals.`
+  )
 }
 
 /**

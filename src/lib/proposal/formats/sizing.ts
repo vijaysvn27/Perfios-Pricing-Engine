@@ -8,11 +8,21 @@
 // by the BOM annexure, without a sizing narrative), so the section is absent.
 import type { ClientSafeProposal } from '../clientSafe'
 import { BOM_NOTES } from '../bomData'
-import type { ModeResult, TraceStep } from '../../engine2/types'
-import { findLine, formatPerUserRate, year2RuleNote } from './shared'
+import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
+import { findLine, formatPerUserRate, includedDpNote, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
 
-const HOSTING_FOOTPRINT = 'Perfios-hosted, India region; a lightweight consent bridge runs on your premises.'
+// The consent governance bridge sits on the client's premises in EVERY
+// hosted mode — including SaaS. Source: Olivia, Vi documentation call
+// 2026-07-07: "even in SaaS the consent bridge will always be a part of
+// their premise, because the consent bridge is the one that talks to data;
+// without that bridge, even with SaaS you will not be able to maintain the
+// governance." Do not "simplify" SaaS to zero client footprint.
+function hostingFootprint(mode: DeploymentMode): string {
+  return mode === 'hybrid'
+    ? 'Perfios-hosted, India region; the consent governance bridge and the data-security components run on your premises.'
+    : 'Perfios-hosted, India region; a lightweight consent governance bridge runs on your premises to enforce consent against your systems.'
+}
 
 function anyEstateModuleSelected(p: ClientSafeProposal): boolean {
   const { dspm, dam, endpoint } = p.inputs.modules
@@ -57,9 +67,11 @@ function tierLabel(trace: TraceStep[]): string | undefined {
 function platformSizingParagraphs(p: ClientSafeProposal, result: ModeResult): string[] {
   const tier = tierLabel(result.trace)
   const perUserRate = result.saas_per_user_rate
+  const includedNote = includedDpNote(p)
   return [
     `Committed base: ${p.inputs.dp_base_y1.toLocaleString('en-IN')} data principals${tier ? ` (${tier} tier)` : ''}`,
-    HOSTING_FOOTPRINT,
+    hostingFootprint(p.inputs.deployment_mode),
+    ...(includedNote ? [includedNote] : []),
     ...(perUserRate !== undefined ? [`Per-user rate: ${formatPerUserRate(perUserRate)} per user per year`] : []),
     year2RuleNote(result.trace),
   ]

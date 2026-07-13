@@ -32,7 +32,7 @@ function deploymentFraming(mode: DeploymentMode): string {
     case 'hybrid':
       return 'Perfios-hosted, with the consent governance bridge running on your premises so sensitive consent data never leaves your network'
     case 'saas':
-      return 'fully hosted and managed by Perfios as a subscription service, so your team can go live without provisioning any infrastructure'
+      return 'hosted and managed by Perfios as a subscription service, with only a lightweight consent governance bridge on your premises — the component that talks to your data, so governance is enforced without your data leaving your systems'
   }
 }
 

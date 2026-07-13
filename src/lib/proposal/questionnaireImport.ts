@@ -15,6 +15,30 @@
 import * as ExcelJS from 'exceljs'
 import type { DeploymentMode } from '../engine2/types'
 import type { ProposalInputs } from './proposalsRepo'
+import { PREPARED_FOR_ROW, PRICING_SECTIONS, PRICING_SHEET_NAME, RESPONSE_COL, TITLE_ROW } from './questionnaireTemplate'
+
+// ---------------------------------------------------------------------------
+// Cell map — derived from questionnaireTemplate.ts (the single source of
+// truth shared with questionnaireExport.ts) instead of hardcoded, so the
+// generated workbook and this parser's row expectations can never drift.
+// ---------------------------------------------------------------------------
+
+const PRICING_QUESTIONS = PRICING_SECTIONS.flatMap((section) => section.questions)
+
+const ROW_BY_QUESTION_NO: Record<number, number> = Object.fromEntries(
+  PRICING_QUESTIONS.map((q): [number, number] => [q.no, q.row]),
+)
+
+/** Response cell (e.g. "D9") for a question by its number (Q1..Q15), per the
+ * template's PRICING_SECTIONS. Throws at module load if the template is ever
+ * edited to drop a question this parser still expects — fail loud, not silent. */
+function responseCell(no: number): string {
+  const row = ROW_BY_QUESTION_NO[no]
+  if (row === undefined) throw new Error(`questionnaireTemplate is missing question Q${no}`)
+  return `${RESPONSE_COL}${row}`
+}
+
+const PREPARED_FOR_CELL = `B${PREPARED_FOR_ROW}`
 
 // ---------------------------------------------------------------------------
 // Free-text parsers (pure, exported for unit tests).
@@ -199,20 +223,20 @@ interface EstateQ {
 }
 
 const ESTATE_QUESTIONS: EstateQ[] = [
-  { key: 'database', label: 'Q5 databases to be scanned', cell: 'D16', extract: leadingInteger },
+  { key: 'database', label: 'Q5 databases to be scanned', cell: responseCell(5), extract: leadingInteger },
   {
     key: 'cloud_connector',
     label: 'Q6 cloud providers holding PII',
-    cell: 'D17',
+    cell: responseCell(6),
     extract: (raw) => {
       const n = countProviders(raw)
       return n > 0 ? n : leadingInteger(raw)
     },
   },
-  { key: 'account', label: 'Q7 separate accounts per provider', cell: 'D18', extract: parseIndianNumber },
-  { key: 'vm', label: 'Q8 virtual machines hosting PII', cell: 'D19', extract: parseIndianNumber },
-  { key: 'gdrive_user', label: 'Q9 M365 / Google Workspace users', cell: 'D20', extract: parseIndianNumber },
-  { key: 'endpoint_device', label: 'Q10 endpoint devices', cell: 'D21', extract: parseIndianNumber },
+  { key: 'account', label: 'Q7 separate accounts per provider', cell: responseCell(7), extract: parseIndianNumber },
+  { key: 'vm', label: 'Q8 virtual machines hosting PII', cell: responseCell(8), extract: parseIndianNumber },
+  { key: 'gdrive_user', label: 'Q9 M365 / Google Workspace users', cell: responseCell(9), extract: parseIndianNumber },
+  { key: 'endpoint_device', label: 'Q10 endpoint devices', cell: responseCell(10), extract: parseIndianNumber },
 ]
 
 function extractCustomerName(b4: string | undefined): string | null {
@@ -235,7 +259,7 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
   const cell = (ref: string): string => (cells[ref] ?? '').trim()
 
   // Q1 deployment mode (D9)
-  const modeRaw = cell('D9')
+  const modeRaw = cell(responseCell(1))
   if (modeRaw) {
     const mode = parseDeploymentMode(modeRaw)
     if (mode) {
@@ -249,7 +273,7 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
   }
 
   // Q2 Year-1 data principal base (D10)
-  const y1Raw = cell('D10')
+  const y1Raw = cell(responseCell(2))
   let y1: number | null = null
   if (y1Raw) {
     y1 = parseIndianNumber(y1Raw)
@@ -265,11 +289,11 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
 
   // Q3 expected growth from Year 2 (D11) -> dp_base_y2
   if (y1 !== null) {
-    inputs.dp_base_y2 = computeDpBaseY2(y1, cell('D11'), warnings, notes)
+    inputs.dp_base_y2 = computeDpBaseY2(y1, cell(responseCell(3)), warnings, notes)
   }
 
   // Q4 core systems to integrate (D12) — note only
-  const q4 = cell('D12')
+  const q4 = cell(responseCell(4))
   if (q4) notes.push(`From questionnaire: Q4 core systems to integrate: "${q4}"`)
 
   // Q5-Q10 estate quantities
@@ -297,7 +321,7 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
   inputs.estate_quantities = estate_quantities
 
   // Q11 DSPM / DAM in scope (D25)
-  const q11Raw = cell('D25')
+  const q11Raw = cell(responseCell(11))
   const dd = parseDspmDam(q11Raw)
   if (!q11Raw) {
     warnings.push('Q11 DSPM/DAM scope was blank — both defaulted to No.')
@@ -310,7 +334,7 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
   }
 
   // Q12 Endpoint Discovery / DLP in scope (D26)
-  const q12Raw = cell('D26')
+  const q12Raw = cell(responseCell(12))
   const ep = q12Raw ? parseYesNo(q12Raw) : null
   if (!q12Raw) {
     warnings.push('Q12 Endpoint Discovery/DLP scope was blank — defaulted to No.')
@@ -322,14 +346,14 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
   inputs.modules = { dspm: dd.dspm ?? false, dam: dd.dam ?? false, endpoint: ep ?? false }
 
   // Q13-Q15 — note only
-  const q13 = cell('D27')
+  const q13 = cell(responseCell(13))
   if (q13) notes.push(`From questionnaire: Q13 existing DSPM/lineage tool: "${q13}"`)
-  const q14 = cell('D28')
+  const q14 = cell(responseCell(14))
   if (q14) notes.push(`From questionnaire: Q14 SaaS/multi-tenant sources holding PII: "${q14}"`)
-  const q15 = cell('D29')
+  const q15 = cell(responseCell(15))
   if (q15) notes.push(`From questionnaire: Q15 implementation — Perfios direct or SI partner: "${q15}"`)
 
-  const customer_name = extractCustomerName(cells.B4)
+  const customer_name = extractCustomerName(cells[PREPARED_FOR_CELL])
 
   return { inputs, customer_name, notes, warnings }
 }
@@ -339,24 +363,10 @@ export function interpretQuestionnaire(cells: Record<string, string>): Questionn
 // to interpretQuestionnaire.
 // ---------------------------------------------------------------------------
 
-const CELL_REFS = [
-  'B4',
-  'D9',
-  'D10',
-  'D11',
-  'D12',
-  'D16',
-  'D17',
-  'D18',
-  'D19',
-  'D20',
-  'D21',
-  'D25',
-  'D26',
-  'D27',
-  'D28',
-  'D29',
-] as const
+// All response cells the parser reads, plus the prepared-for cell — derived
+// from the template rather than hardcoded, so a template edit that adds,
+// removes, or moves a question is reflected here automatically.
+const CELL_REFS: string[] = [PREPARED_FOR_CELL, ...PRICING_QUESTIONS.map((q) => `${RESPONSE_COL}${q.row}`)]
 
 function cellText(raw: unknown): string {
   const v =
@@ -369,9 +379,11 @@ function cellText(raw: unknown): string {
 }
 
 function findQuestionnaireSheet(wb: ExcelJS.Workbook): ExcelJS.Worksheet | undefined {
-  const byName = wb.worksheets.find((ws) => ws.name.trim().toLowerCase() === 'pricing questionnaire')
+  const byName = wb.worksheets.find((ws) => ws.name.trim().toLowerCase() === PRICING_SHEET_NAME.toLowerCase())
   if (byName) return byName
-  return wb.worksheets.find((ws) => /pricing prerequisite questionnaire/i.test(cellText(ws.getCell('B3').value)))
+  return wb.worksheets.find((ws) =>
+    /pricing prerequisite questionnaire/i.test(cellText(ws.getCell(`B${TITLE_ROW}`).value)),
+  )
 }
 
 /** Loads a filled "Perfios_DPDP_Questionnaire" workbook and maps it to proposal inputs. */

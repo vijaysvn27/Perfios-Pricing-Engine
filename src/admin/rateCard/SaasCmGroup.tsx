@@ -129,8 +129,8 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
           SaaS infra basis (D1) — which $/mo column prices hosting
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
-          {basisRadio('onprem_ref', 'On-Prem Total (reviewed position)', 'The Olivia/Anil-reviewed commercial basis; current list prices.')}
-          {basisRadio('saas_v3', 'SaaS v3 (lower cloud cost)', 'Reprices SaaS platform fees to the SaaS v3 sizing column.')}
+          {basisRadio('onprem_ref', 'On-Prem Total (reviewed position)', 'The Olivia/Anil-reviewed commercial basis; kept for reference, no longer the default since 2026-07-13.')}
+          {basisRadio('saas_v3', 'SaaS v3 (default since 2026-07-13)', 'Reprices SaaS platform fees to actual SaaS hosting cost — the current default, per owner direction.')}
         </div>
         <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs text-slate-600">
           <span className="font-semibold text-slate-700">

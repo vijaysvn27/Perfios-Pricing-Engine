@@ -62,6 +62,23 @@ function isTotalRow(firstCell: string | number): boolean {
   return /total|tco/i.test(String(firstCell))
 }
 
+/** Writes a single paragraph cell, applying the Honda "INCLUDED CONSENTS"
+ * callout treatment (light green fill, bold banner-blue text) whenever the
+ * paragraph starts with "Included:" — the included-DP note (shared.ts
+ * includedDpNote), detected by prefix so no caller has to pass a flag. */
+function writeParagraph(ws: ExcelJS.Worksheet, row: number, colCount: number, text: string): void {
+  const c = ws.getCell(row, 1)
+  ws.mergeCells(row, 1, row, colCount)
+  c.value = text
+  if (text.startsWith('Included:')) {
+    c.font = { size: 10, bold: true, color: { argb: BANNER_BLUE } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN_CALLOUT } }
+  } else {
+    c.font = { size: 10, color: { argb: 'FF222222' } }
+  }
+  c.alignment = { wrapText: true, vertical: 'top' }
+}
+
 function writeTable(ws: ExcelJS.Worksheet, table: RenderTable, startRow: number): number {
   let r = startRow
   table.columns.forEach((text, i) => {
@@ -212,10 +229,7 @@ function writeSections(ws: ExcelJS.Worksheet, model: ProposalRenderModel, colCou
     r += 1
 
     for (const para of section.paragraphs ?? []) {
-      const c = band(r)
-      c.value = para
-      c.font = { size: 10, color: { argb: 'FF222222' } }
-      c.alignment = { wrapText: true, vertical: 'top' }
+      writeParagraph(ws, r, colCount, para)
       r += 1
     }
 
@@ -368,10 +382,7 @@ function writeSizingSheet(wb: ExcelJS.Workbook, model: ProposalRenderModel, cust
   r += 1
 
   for (const para of section.paragraphs ?? []) {
-    const c = band(r)
-    c.value = para
-    c.font = { size: 10, color: { argb: 'FF222222' } }
-    c.alignment = { wrapText: true, vertical: 'top' }
+    writeParagraph(ws, r, colCount, para)
     r += 1
   }
   r += 1

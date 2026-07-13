@@ -10,7 +10,7 @@ import type { ComponentLine, DeploymentMode, ModeResult } from '../../engine2/ty
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
 import { buildSizingSection } from './sizing'
-import { discountTotalRows, findLine, fmtPct, netYearsOf, whatYouGetBullets } from './shared'
+import { discountTotalRows, findLine, fmtPct, includedDpNote, netYearsOf, whatYouGetBullets } from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
 const ONPREM_PRICE_DRIVER =
@@ -119,6 +119,7 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
   const title = 'Commercial Proposal'
 
   const sizing = buildSizingSection(p, result)
+  const includedNote = includedDpNote(p)
 
   const core = numberedSections([
     { heading: 'What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
@@ -126,7 +127,7 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
     { ...buildInclusionsExclusionsSection(p), heading: 'Inclusions & Exclusions' },
     { heading: 'Scope & Coverage', table: scopeTable(p) },
     ...(sizing ? [sizing] : []),
-    { heading: 'What Drives Your Price', paragraphs: [driver] },
+    { heading: 'What Drives Your Price', paragraphs: [driver, ...(includedNote ? [includedNote] : [])] },
     { heading: 'Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
   ])
 
