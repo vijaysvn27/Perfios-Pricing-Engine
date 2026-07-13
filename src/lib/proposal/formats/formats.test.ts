@@ -5,6 +5,7 @@ import type { DealInputs } from '../../engine2/types'
 import type { ClientSafeProposal } from '../clientSafe'
 import { scanForBlocklist } from '../clientSafe'
 import { buildWorkbook } from '../excelExport'
+import { applyPricingOverrides } from '../pricingOverrides'
 import { buildFormat } from './index'
 import type { ProposalRenderModel } from './types'
 
@@ -904,6 +905,91 @@ describe('discount handling (D4, all formats)', () => {
       all.hybrid.net_total_tco_inr,
       all.saas.net_total_tco_inr,
     ])
+  })
+})
+
+// AM Pricing Worksheet (pricing_overrides) — the List/Adjustment/Negotiated
+// TOTAL rows. Hand-verified against the on-prem 25L fixture: CM list years
+// [4,440,000, 900,000, 900,000], list TCO 6,240,000; override cm:y0 →
+// 4,000,000 gives negotiated years [4,000,000, 900,000, 900,000], TCO
+// 4,000,000 + 2 × 900,000 = 5,800,000, delta -440,000 (Year-2/3 deltas are 0
+// and render blank per the blank-not-zero rule).
+describe('worksheet overrides (List vs Negotiated total rows, all formats)', () => {
+  const overrides = { 'cm:y0': 4_000_000 }
+
+  function negotiatedClientSafe(opts: { discount_shown?: boolean } = {}): ClientSafeProposal {
+    const listResult = price(RATE_CARD_SEED, onpremInputs)
+    return {
+      customer_name: 'Acme Appliances',
+      validity_days: 60,
+      inputs: { ...onpremInputs, pricing_overrides: overrides },
+      results: [applyPricingOverrides(listResult, overrides)],
+      list_results: [listResult],
+      discount_shown: opts.discount_shown ?? true,
+      usage_rates: RATE_CARD_SEED.usage_rates,
+    }
+  }
+
+  it('shown: List / Adjustment / Negotiated rows with the hand-verified numbers (both formats)', () => {
+    for (const kind of ['module_wise', 'perfios'] as const) {
+      const model = buildFormat(kind, negotiatedClientSafe({ discount_shown: true }), FIXED_DATE)
+      const table = tableFromModel(model, (h) => /commercial summary/i.test(h))
+      expect(table.rows).toContainEqual(['TOTAL — List', 4_440_000, 900_000, 900_000, 6_240_000])
+      expect(table.rows).toContainEqual(['Adjustment', -440_000, '', '', -440_000])
+      expect(table.rows).toContainEqual(['TOTAL — Negotiated', 4_000_000, 900_000, 900_000, 5_800_000])
+      // No percentage-discount wording — the worksheet is per-cell.
+      expect(JSON.stringify(model)).not.toContain('Discount (')
+    }
+  })
+
+  it('component rows carry the NEGOTIATED per-line figures (results are post-override)', () => {
+    const model = buildFormat('module_wise', negotiatedClientSafe(), FIXED_DATE)
+    const table = tableFromModel(model, (h) => /commercial summary/i.test(h))
+    expect(table.rows).toContainEqual(['Consent Manager (7 modules)', 4_000_000, 900_000, 900_000, 5_800_000])
+  })
+
+  it('hidden: a single TOTAL row with negotiated numbers only — no List row, no Adjustment', () => {
+    for (const kind of ['module_wise', 'perfios'] as const) {
+      const model = buildFormat(kind, negotiatedClientSafe({ discount_shown: false }), FIXED_DATE)
+      const json = JSON.stringify(model)
+      expect(json).not.toContain('TOTAL — List')
+      expect(json).not.toContain('Adjustment')
+      const table = tableFromModel(model, (h) => /commercial summary/i.test(h))
+      expect(table.rows).toContainEqual(['TOTAL', 4_000_000, 900_000, 900_000, 5_800_000])
+    }
+  })
+
+  it('compare mode: Total Year 1 List/Adjustment/Negotiated across the three modes (saas/hybrid CM Y1 list 4,091,496)', () => {
+    const all = priceAllModes(RATE_CARD_SEED, onpremInputs)
+    const listResults = [all.onprem, all.hybrid, all.saas]
+    const proposal: ClientSafeProposal = {
+      customer_name: 'Acme Appliances',
+      validity_days: 60,
+      inputs: { ...onpremInputs, pricing_overrides: overrides },
+      results: listResults.map((r) => applyPricingOverrides(r, overrides)),
+      list_results: listResults,
+      discount_shown: true,
+      usage_rates: RATE_CARD_SEED.usage_rates,
+    }
+    const model = buildFormat('perfios', proposal, FIXED_DATE)
+    const table = tableFromModel(model, (h) => h === 'Your Options')
+    expect(table.rows).toContainEqual(['Total Year 1 — List', 4_440_000, 4_091_496, 4_091_496])
+    expect(table.rows).toContainEqual(['Adjustment', -440_000, -91_496, -91_496])
+    expect(table.rows).toContainEqual(['Total Year 1 — Negotiated', 4_000_000, 4_000_000, 4_000_000])
+  })
+
+  it('legacy records without overrides are untouched: same List/Discount/Net rendering as before', () => {
+    const discountedInputs: DealInputs = { ...onpremInputs, discount_pct: 0.1 }
+    const model = buildFormat('module_wise', clientSafe(discountedInputs, { discount_shown: true }), FIXED_DATE)
+    expect(JSON.stringify(model)).toContain('Discount (10%)')
+    expect(JSON.stringify(model)).not.toContain('Negotiated')
+  })
+
+  it('is blocklist-clean with overrides present', () => {
+    for (const kind of ['module_wise', 'perfios'] as const) {
+      const model = buildFormat(kind, negotiatedClientSafe(), FIXED_DATE)
+      expect(scanForBlocklist(model)).toEqual([])
+    }
   })
 })
 

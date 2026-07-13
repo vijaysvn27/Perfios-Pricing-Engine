@@ -5,7 +5,7 @@ import type { ClientSafeProposal } from '../clientSafe'
 import { narrativeSections } from '../narrative'
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
-import { blankIfZero, discountTotalRows, formatINR, netYearsOf } from './shared'
+import { blankIfZero, discountTotalRows, formatINR, totalRowInputs } from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
 const TITLE = 'Commercial Summary — Module-wise'
@@ -60,7 +60,6 @@ function buildAttributionSection(p: ClientSafeProposal): RenderSection {
 export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
   const years = result.total_years_inr.length
-  const d = p.inputs.discount_pct
 
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
 
@@ -71,16 +70,17 @@ export function build(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     .filter((l) => l.included)
     .map((l) => [l.label, ...l.years_inr.map(blankIfZero), blankIfZero(l.tco_inr)])
 
-  const netYears = netYearsOf(result.total_years_inr, d)
+  const t = totalRowInputs(p, result, p.list_results?.[0])
   rows.push(
     ...discountTotalRows({
       label: 'TOTAL',
-      years: result.total_years_inr,
-      netYears,
-      tco: result.total_tco_inr,
-      netTco: result.net_total_tco_inr,
-      discount_pct: d,
+      years: t.years,
+      netYears: t.netYears,
+      tco: t.tco,
+      netTco: t.netTco,
+      discount_pct: p.inputs.discount_pct,
       discount_shown: p.discount_shown,
+      overrides: t.overrides,
     }),
   )
 

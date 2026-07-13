@@ -5,6 +5,7 @@
 import type { ComponentLine, ModeResult, TraceStep } from '../../engine2/types'
 import { formatINR } from '../../format'
 import type { ClientSafeProposal } from '../clientSafe'
+import { hasOverrides, listVsNegotiated } from '../pricingOverrides'
 
 /** The 7 Consent Manager modules — verbatim copy, used everywhere "What You
  * Get" appears (module-wise implicitly via the CM line label, and perfios
@@ -136,10 +137,21 @@ export function findLine(result: ModeResult, key: ComponentLine['component_key']
 }
 
 /**
- * Discount rows for a totals line (D4): list/discount/net when the discount
- * is shown; net-only when it's hidden; a single undiscounted row when there
- * is no discount. `tco` is optional — omit it for tables that only show
- * per-year figures.
+ * Discount/negotiation rows for a totals line (D4, extended for per-cell
+ * worksheet overrides): list/adjustment/net when a difference is shown; a
+ * single net-only row when it's hidden; a single undiscounted row when
+ * `years === netYears` throughout. `tco` is optional — omit it for tables
+ * that only show per-year figures.
+ *
+ * `overrides: true` (set by callers via formats/shared.ts's totalRowInputs,
+ * whenever the deal has AM Pricing Worksheet edits — pricingOverrides.ts)
+ * reuses this exact same three-row shape but labels the middle row
+ * "Adjustment" (a plain delta, since a mix of per-cell increases/decreases
+ * has no single percentage to name) and the third "— Negotiated" instead of
+ * "— Net". `overrides` and a non-zero `discount_pct` are mutually exclusive
+ * in practice (wizardLogic.buildRecord only applies pricing_overrides when
+ * present, at which point they supersede discount_pct for that record's
+ * totals) — `overrides` always wins when both are somehow set.
  */
 export function discountTotalRows(opts: {
   label: string
@@ -149,10 +161,22 @@ export function discountTotalRows(opts: {
   netTco?: number
   discount_pct: number
   discount_shown: boolean
+  overrides?: boolean
 }): (string | number)[][] {
-  const { label, years, netYears, tco, netTco, discount_pct: d, discount_shown } = opts
+  const { label, years, netYears, tco, netTco, discount_pct: d, discount_shown, overrides } = opts
   const row = (lbl: string, ys: number[], t?: number): (string | number)[] =>
     t !== undefined ? [lbl, ...ys.map(blankIfZero), blankIfZero(t)] : [lbl, ...ys.map(blankIfZero)]
+
+  if (overrides) {
+    if (!discount_shown) return [row(label, netYears, netTco)]
+    const deltaYears = years.map((y, i) => -(y - netYears[i]))
+    const deltaTco = tco !== undefined && netTco !== undefined ? -(tco - netTco) : undefined
+    return [
+      row(`${label} — List`, years, tco),
+      row('Adjustment', deltaYears, deltaTco),
+      row(`${label} — Negotiated`, netYears, netTco),
+    ]
+  }
 
   if (d > 0 && discount_shown) {
     const discYears = years.map((y, i) => -(y - netYears[i]))
@@ -167,6 +191,66 @@ export function discountTotalRows(opts: {
     return [row(label, netYears, netTco)]
   }
   return [row(label, years, tco)]
+}
+
+/**
+ * Assembles the (years, netYears, tco, netTco, overrides) tuple a mode's
+ * TOTAL row needs, choosing between the two mutually-exclusive sources of
+ * "what's negotiated":
+ *  - worksheet overrides present (hasOverrides + a matching list_results
+ *    entry): `result` (in ClientSafeProposal.results) is already the
+ *    NEGOTIATED ModeResult (wizardLogic.buildRecord applies
+ *    applyPricingOverrides before it lands there); `listResult` (from
+ *    ClientSafeProposal.list_results) is the pre-override list. Delegates the
+ *    Year-1/TCO pair to listVsNegotiated so PricePanel and formats read the
+ *    same numbers off the same helper.
+ *  - otherwise (legacy path, unchanged): `result` IS the list, and the net
+ *    side is derived from discount_pct via netYearsOf / net_total_*.
+ */
+export interface TotalRowInputs {
+  years: number[]
+  netYears: number[]
+  tco: number
+  netTco: number
+  /** Total Year 1 — always years[0]/netYears[0], surfaced separately for
+   * callers (buildCompare) that need the scalar without slicing the array. */
+  year1: number
+  netYear1: number
+  /** Total annual (Year 2+) — NOT necessarily years[1] (a 1-year TCO has no
+   * Year 2 in the years array at all, but total_recurring_inr always exists
+   * structurally), so this is sourced from total_recurring_inr directly. */
+  recurring: number
+  netRecurring: number
+  overrides: boolean
+}
+
+export function totalRowInputs(p: ClientSafeProposal, result: ModeResult, listResult: ModeResult | undefined): TotalRowInputs {
+  if (hasOverrides(p.inputs.pricing_overrides) && listResult) {
+    const lvn = listVsNegotiated(listResult, result)
+    return {
+      years: listResult.total_years_inr,
+      netYears: result.total_years_inr,
+      tco: lvn.list_tco,
+      netTco: lvn.negotiated_tco,
+      year1: lvn.list_y1,
+      netYear1: lvn.negotiated_y1,
+      recurring: listResult.total_recurring_inr,
+      netRecurring: result.total_recurring_inr,
+      overrides: true,
+    }
+  }
+  const d = p.inputs.discount_pct
+  return {
+    years: result.total_years_inr,
+    netYears: netYearsOf(result.total_years_inr, d),
+    tco: result.total_tco_inr,
+    netTco: result.net_total_tco_inr,
+    year1: result.total_year1_inr,
+    netYear1: result.net_total_year1_inr,
+    recurring: result.total_recurring_inr,
+    netRecurring: netYearsOf([result.total_recurring_inr], d)[0],
+    overrides: false,
+  }
 }
 
 /** Net (discounted) per-year totals, rounded the same way the engine rounds

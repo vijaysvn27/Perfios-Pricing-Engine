@@ -399,6 +399,70 @@ describe('totalsFromResult', () => {
   })
 })
 
+// AM Pricing Worksheet plumbing (pricingOverrides.ts → buildRecord): the
+// negotiated numbers flow into ProposalRecord.results BEFORE any downstream
+// consumer sees them. Hand-verified against the on-prem 25L fixture: CM list
+// years [4,440,000, 900,000, 900,000]; override Year 1 → 4,000,000 gives
+// total_year1 4,000,000 and tco 4,000,000 + 2 × 900,000 = 5,800,000.
+describe('buildRecord — AM Pricing Worksheet (pricing_overrides)', () => {
+  const worksheetInputs = {
+    ...defaultInputs(60),
+    deployment_mode: 'onprem' as const,
+    dp_base_y1: 2_500_000,
+    dp_base_y2: 2_500_000,
+    tco_years: 3 as const,
+    pricing_overrides: { 'cm:y0': 4_000_000 },
+  }
+
+  it('applies the overrides to results and keeps the pre-override pricing on list_results', () => {
+    const draft: ProposalDraft = { ...makeDraft('p1', 'Acme'), inputs: worksheetInputs }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    expect(record.results).toHaveLength(1)
+    expect(record.results[0].total_year1_inr).toBe(4_000_000)
+    expect(record.results[0].total_tco_inr).toBe(5_800_000)
+    expect(record.results[0].net_total_tco_inr).toBe(5_800_000)
+    expect(record.results[0].trace.some((s) => s.label === 'Negotiated price')).toBe(true)
+    expect(record.list_results).toHaveLength(1)
+    expect(record.list_results?.[0].total_year1_inr).toBe(4_440_000)
+    expect(record.list_results?.[0].total_tco_inr).toBe(6_240_000)
+  })
+
+  it('totalsFromResult over a negotiated result snapshots the negotiated totals', () => {
+    const draft: ProposalDraft = { ...makeDraft('p1', 'Acme'), inputs: worksheetInputs }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    const totals = totalsFromResult(record.results[0])
+    expect(totals.total_year1_inr).toBe(4_000_000)
+    expect(totals.total_tco_inr).toBe(5_800_000)
+    expect(totals.net_total_year1_inr).toBe(4_000_000)
+    expect(totals.net_total_tco_inr).toBe(5_800_000)
+  })
+
+  it('no worksheet edits: results stay plain engine output and list_results is absent', () => {
+    const draft: ProposalDraft = {
+      ...makeDraft('p1', 'Acme'),
+      inputs: { ...worksheetInputs, pricing_overrides: undefined },
+    }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    expect(record.results[0].total_year1_inr).toBe(4_440_000)
+    expect(record.results[0].total_tco_inr).toBe(6_240_000)
+    expect(record.list_results).toBeUndefined()
+    expect(record.results[0].trace.some((s) => s.label === 'Negotiated price')).toBe(false)
+  })
+
+  it('compare mode: the same override map applies to every priced mode (saas/hybrid CM Y1 list 4,091,496)', () => {
+    const draft: ProposalDraft = {
+      ...makeDraft('p1', 'Acme'),
+      inputs: { ...worksheetInputs, compare_all_modes: true },
+    }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    expect(record.results).toHaveLength(3)
+    for (const r of record.results) {
+      expect(r.total_year1_inr).toBe(4_000_000) // cm:y0 overridden in every mode
+    }
+    expect(record.list_results?.map((r) => r.total_year1_inr)).toEqual([4_440_000, 4_091_496, 4_091_496])
+  })
+})
+
 // ---------------------------------------------------------------------------
 // localStorage-fallback repo round-trip with a stubbed storage object.
 // ---------------------------------------------------------------------------

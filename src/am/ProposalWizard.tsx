@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { price } from '../lib/engine2/engine2'
 import { loadPublishedRateCard, type PublishedRateCard } from '../lib/rateCard/repo'
+import { applyPricingOverrides, hasOverrides } from '../lib/proposal/pricingOverrides'
 import {
   newProposalId,
   saveProposal,
@@ -107,6 +108,19 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
   )
 
   /**
+   * The single-mode LIST price (plain engine output, pre-worksheet), priced
+   * ONCE here and shared by the Pricing Worksheet (Step3Commercials' grid —
+   * its rows and per-cell list values) and PricePanel (which layers
+   * applyPricingOverrides on top for negotiated totals) — neither runs
+   * price() again. Null in compare mode: the worksheet is single-mode only,
+   * and PricePanel handles compare itself via priceAllModes.
+   */
+  const listResult = useMemo(
+    () => (rc && !draft.inputs.compare_all_modes ? price(rc.card, draft.inputs) : null),
+    [rc, draft.inputs],
+  )
+
+  /**
    * Mid-journey questionnaire import (item 3b — upload at multiple journey
    * points, not just the list page): MERGES the parsed result into the
    * CURRENT draft rather than starting a new one. Customer name only fills
@@ -136,10 +150,15 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
     try {
       // Totals snapshot follows the selected mode (compare keeps all three in
       // the render; the summary row in the list shows the primary choice).
+      // Worksheet edits (pricing_overrides) are folded in first, so the list
+      // view snapshots NEGOTIATED totals — same plumbing as
+      // wizardLogic.buildRecord uses for the client documents.
       const priced = price(rc.card, draft.inputs)
+      const overrides = draft.inputs.pricing_overrides
+      const effective = hasOverrides(overrides) ? applyPricingOverrides(priced, overrides) : priced
       const toSave: ProposalDraft = {
         ...draft,
-        totals: totalsFromResult(priced),
+        totals: totalsFromResult(effective),
         rate_card_version: rc.version,
       }
       const res = await saveProposal(toSave)
@@ -227,7 +246,9 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
         <div>
           {step === 0 && <Step1Deal draft={draft} update={update} />}
           {step === 1 && <Step2Scope draft={draft} rateCard={rc.card} updateInputs={updateInputs} />}
-          {step === 2 && <Step3Commercials draft={draft} update={update} updateInputs={updateInputs} />}
+          {step === 2 && (
+            <Step3Commercials draft={draft} result={listResult} update={update} updateInputs={updateInputs} />
+          )}
           {step === 3 && (
             <Step4Present draft={draft} rateCard={rc.card} updateInputs={updateInputs} onSave={handleSave} saving={saving} />
           )}
@@ -255,7 +276,7 @@ export default function ProposalWizard({ instanceId, initial, onBack, onSaved, i
           </div>
         </div>
 
-        <PricePanel card={rc.card} version={rc.version} source={rc.source} inputs={draft.inputs} />
+        <PricePanel card={rc.card} version={rc.version} source={rc.source} inputs={draft.inputs} listResult={listResult} />
       </div>
     </div>
   )

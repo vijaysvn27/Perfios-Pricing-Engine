@@ -1,13 +1,17 @@
-// Persistent live price panel: recomputes price() / priceAllModes() on every
-// input change and renders Year 1 / Year 2+ / N-yr TCO plus the expandable
-// "How this price is calculated" trace (§6 of the revamp design — no hidden
-// math). All arithmetic stays in engine2; net Year-2+ uses the same rounding
-// helper the format builders use.
+// Persistent live price panel: renders Year 1 / Year 2+ / N-yr TCO plus the
+// expandable "How this price is calculated" trace (§6 of the revamp design —
+// no hidden math). Single-mode pricing comes in precomputed from
+// ProposalWizard (`listResult`, the same price() output the Pricing
+// Worksheet edits against — never priced twice); compare mode still runs
+// priceAllModes here. Worksheet overrides (inputs.pricing_overrides) are
+// layered on via applyPricingOverrides, so the panel always shows the
+// NEGOTIATED totals with a muted "list ₹X" line when any cell was edited.
 import { useMemo, useState } from 'react'
-import { price, priceAllModes } from '../lib/engine2/engine2'
+import { priceAllModes } from '../lib/engine2/engine2'
 import type { DeploymentMode, ModeResult, RateCard, TraceStep } from '../lib/engine2/types'
 import { formatINR } from '../lib/format'
 import { fmtPct, netYearsOf } from '../lib/proposal/formats/shared'
+import { applyPricingOverrides, hasOverrides, listVsNegotiated } from '../lib/proposal/pricingOverrides'
 import { rateCardSourceChipLabel, type RateCardSource } from '../lib/rateCard/repo'
 import type { ProposalInputs } from '../lib/proposal/proposalsRepo'
 import { MODE_LABELS } from './wizardLogic'
@@ -17,6 +21,9 @@ interface Props {
   version: number
   source: RateCardSource
   inputs: ProposalInputs
+  /** Single-mode LIST result, priced once in ProposalWizard (shared with the
+   * Step-3 worksheet). Null in compare mode. */
+  listResult: ModeResult | null
 }
 
 const MODES: DeploymentMode[] = ['onprem', 'hybrid', 'saas']
@@ -67,23 +74,54 @@ function BigNumber({ label, value }: { label: string; value: number }) {
   )
 }
 
-function SingleModeTotals({ result, discountPct }: { result: ModeResult; discountPct: number }) {
-  const years = result.total_years_inr.length
+/**
+ * Single-mode totals. `list` is the pre-worksheet engine result; `negotiated`
+ * is applyPricingOverrides(list, overrides) when the AM edited any worksheet
+ * cell, else null. With worksheet edits, negotiated totals lead and a muted
+ * "list ₹X" line follows (via the shared listVsNegotiated helper — the same
+ * numbers the formats' List/Adjustment/Negotiated rows use). Without edits,
+ * the legacy discount_pct display is unchanged.
+ */
+function SingleModeTotals({
+  list,
+  negotiated,
+  discountPct,
+}: {
+  list: ModeResult
+  negotiated: ModeResult | null
+  discountPct: number
+}) {
+  const years = list.total_years_inr.length
+  if (negotiated) {
+    const lvn = listVsNegotiated(list, negotiated)
+    return (
+      <div className="space-y-1.5">
+        <BigNumber label="Year 1" value={lvn.negotiated_y1} />
+        <BigNumber label="Year 2+ (annual)" value={negotiated.total_recurring_inr} />
+        <div className="border-t border-slate-100 pt-1.5">
+          <BigNumber label={`${years}-yr TCO (negotiated)`} value={lvn.negotiated_tco} />
+        </div>
+        <p className="text-xs text-slate-400">
+          List TCO {formatINR(lvn.list_tco)} · list Year 1 {formatINR(lvn.list_y1)} — worksheet-negotiated pricing.
+        </p>
+      </div>
+    )
+  }
   const discounted = discountPct > 0
-  const netRecurring = netYearsOf([result.total_recurring_inr], discountPct)[0]
+  const netRecurring = netYearsOf([list.total_recurring_inr], discountPct)[0]
   return (
     <div className="space-y-1.5">
-      <BigNumber label="Year 1" value={discounted ? result.net_total_year1_inr : result.total_year1_inr} />
-      <BigNumber label="Year 2+ (annual)" value={discounted ? netRecurring : result.total_recurring_inr} />
+      <BigNumber label="Year 1" value={discounted ? list.net_total_year1_inr : list.total_year1_inr} />
+      <BigNumber label="Year 2+ (annual)" value={discounted ? netRecurring : list.total_recurring_inr} />
       <div className="border-t border-slate-100 pt-1.5">
         <BigNumber
           label={`${years}-yr TCO${discounted ? ' (net)' : ''}`}
-          value={discounted ? result.net_total_tco_inr : result.total_tco_inr}
+          value={discounted ? list.net_total_tco_inr : list.total_tco_inr}
         />
       </div>
       {discounted && (
         <p className="text-xs text-slate-400">
-          List TCO {formatINR(result.total_tco_inr)} less {fmtPct(discountPct)} discount.
+          List TCO {formatINR(list.total_tco_inr)} less {fmtPct(discountPct)} discount.
         </p>
       )}
     </div>
@@ -122,16 +160,25 @@ function CompareTotals({ all, discountPct }: { all: Record<DeploymentMode, ModeR
   )
 }
 
-export default function PricePanel({ card, version, source, inputs }: Props) {
+export default function PricePanel({ card, version, source, inputs, listResult }: Props) {
   const [traceOpen, setTraceOpen] = useState(false)
 
   const compare = inputs.compare_all_modes
   const all = useMemo(() => (compare ? priceAllModes(card, inputs) : null), [compare, card, inputs])
-  const single = useMemo(() => (compare ? null : price(card, inputs)), [compare, card, inputs])
+  // Single-mode LIST result arrives precomputed (ProposalWizard prices once
+  // for both this panel and the Step-3 worksheet); the negotiated view is
+  // layered on top only when a worksheet cell was actually edited.
+  const single = compare ? null : listResult
+  const negotiated = useMemo(
+    () => (single && hasOverrides(inputs.pricing_overrides) ? applyPricingOverrides(single, inputs.pricing_overrides) : null),
+    [single, inputs.pricing_overrides],
+  )
 
   // The trace always follows the currently selected deployment mode, even in
-  // compare view — that is the mode the AM is actively shaping.
-  const traced = compare && all ? all[inputs.deployment_mode] : single
+  // compare view — that is the mode the AM is actively shaping. With
+  // worksheet edits, the negotiated trace is shown: it carries one
+  // "Negotiated price" step per edited cell on top of the engine's steps.
+  const traced = compare && all ? all[inputs.deployment_mode] : (negotiated ?? single)
   const sourceChipLabel = rateCardSourceChipLabel(source)
 
   return (
@@ -157,7 +204,7 @@ export default function PricePanel({ card, version, source, inputs }: Props) {
       {compare && all ? (
         <CompareTotals all={all} discountPct={inputs.discount_pct} />
       ) : (
-        single && <SingleModeTotals result={single} discountPct={inputs.discount_pct} />
+        single && <SingleModeTotals list={single} negotiated={negotiated} discountPct={inputs.discount_pct} />
       )}
 
       {traced && (

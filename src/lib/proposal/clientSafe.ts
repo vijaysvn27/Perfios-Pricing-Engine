@@ -2,6 +2,14 @@
 // client renders BY TYPE (ClientSafeProposal has no channel field), and a
 // blocklist scan backstops every generated string surface (D5 in the spec).
 import type { DealInputs, ModeResult } from '../engine2/types'
+import type { PricingOverrides } from './pricingOverrides'
+
+/** DealInputs plus the one AM-wizard-only field format builders need to read
+ * (pricing_overrides — see pricingOverrides.ts). Kept as a local extension
+ * rather than importing ProposalInputs from proposalsRepo.ts, which would
+ * create a circular type import (proposalsRepo.ts already imports Channel
+ * from this file). */
+type RecordInputs = DealInputs & { pricing_overrides?: PricingOverrides }
 
 /** Partner / internal names that must never appear in client-facing output. */
 export const CLIENT_BLOCKLIST: readonly string[] = [
@@ -48,8 +56,10 @@ export interface ProposalRecord {
   channel: Channel // internal only — stripped by toClientSafe
   internal_notes: string
   validity_days: number
-  inputs: DealInputs
-  results: ModeResult[] // one entry, or three in compare mode
+  inputs: RecordInputs
+  results: ModeResult[] // one entry, or three in compare mode — NEGOTIATED
+  // (post-applyPricingOverrides) when pricing_overrides is present; identical
+  // to list_results otherwise. See wizardLogic.buildRecord.
   discount_shown: boolean
   /** Optional: computed by wizardLogic.buildRecord (has the rate card in
    * scope); absent for records built without a rate card in hand. */
@@ -57,17 +67,27 @@ export interface ProposalRecord {
   /** Optional: populated by wizardLogic.buildRecord from the rate card's
    * usage_rates (e.g. OCR). Absent for records built without a rate card. */
   usage_rates?: UsageRateLine[]
+  /**
+   * The pre-override ModeResult(s) (engine2's plain price()/priceAllModes()
+   * output), parallel to `results` (same order/modes) — set ONLY when
+   * pricing_overrides is present, so formats can render a "List vs
+   * Negotiated" TOTAL row (see formats/shared.ts's totalRowInputs) without
+   * re-pricing. Absent when there is nothing to negotiate: `results` already
+   * IS the list in that case.
+   */
+  list_results?: ModeResult[]
 }
 
 /** What client render paths receive. No channel, no internal notes — by construction. */
 export interface ClientSafeProposal {
   customer_name: string
   validity_days: number
-  inputs: DealInputs
+  inputs: RecordInputs
   results: ModeResult[]
   discount_shown: boolean
   sizing_lines?: SizingLine[]
   usage_rates?: UsageRateLine[]
+  list_results?: ModeResult[]
 }
 
 export function toClientSafe(p: ProposalRecord): ClientSafeProposal {
@@ -79,6 +99,7 @@ export function toClientSafe(p: ProposalRecord): ClientSafeProposal {
     discount_shown: p.discount_shown,
     sizing_lines: p.sizing_lines,
     usage_rates: p.usage_rates,
+    list_results: p.list_results,
   }
 }
 

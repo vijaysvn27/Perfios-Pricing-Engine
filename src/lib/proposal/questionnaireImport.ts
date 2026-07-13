@@ -416,6 +416,13 @@ export async function importQuestionnaireXlsx(buffer: ArrayBuffer): Promise<Ques
  * which then fails to satisfy `ProposalInputs`'s required fields. Every field
  * interpretQuestionnaire may set is merged explicitly instead, each falling
  * back to the caller's defaults.
+ *
+ * `pricing_overrides` (the AM Pricing Worksheet, pricingOverrides.ts) is
+ * deliberately NOT in that explicit list: interpretQuestionnaire never
+ * produces it, so the `...defaults` spread carries the CURRENT draft's
+ * worksheet edits through untouched — a mid-journey questionnaire import
+ * (ProposalWizard.handleQuestionnaireImported merges into the live draft)
+ * can never silently wipe out pricing the AM already negotiated.
  */
 export function mergeQuestionnaireInputs(
   defaults: ProposalInputs,

@@ -15,11 +15,10 @@ import {
   CONSENT_MODIFICATION_CAVEAT,
   discountTotalRows,
   findLine,
-  fmtPct,
   formatINR,
   formatPerUserRate,
   includedDpNote,
-  netYearsOf,
+  totalRowInputs,
   traceValue,
   whatYouGetBullets,
 } from './shared'
@@ -92,23 +91,23 @@ function scopeTable(p: ClientSafeProposal): RenderTable {
   return { title: 'Scope & Coverage', columns: ['Item', 'Status'], rows }
 }
 
-function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
+function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult, listResult: ModeResult | undefined): RenderTable {
   const years = result.total_years_inr.length
-  const d = p.inputs.discount_pct
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
   const rows: (string | number)[][] = result.lines
     .filter((l) => l.included)
     .map((l) => [l.label, ...l.years_inr.map(blankIfZero), blankIfZero(l.tco_inr)])
-  const netYears = netYearsOf(result.total_years_inr, d)
+  const t = totalRowInputs(p, result, listResult)
   rows.push(
     ...discountTotalRows({
       label: 'TOTAL',
-      years: result.total_years_inr,
-      netYears,
-      tco: result.total_tco_inr,
-      netTco: result.net_total_tco_inr,
-      discount_pct: d,
+      years: t.years,
+      netYears: t.netYears,
+      tco: t.tco,
+      netTco: t.netTco,
+      discount_pct: p.inputs.discount_pct,
       discount_shown: p.discount_shown,
+      overrides: t.overrides,
     }),
   )
   return { title: 'Commercial Summary (INR, exclusive of taxes)', columns, rows }
@@ -130,9 +129,8 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
  * (owner: "Fields not included in the pricing should be left empty"): every
  * cell with no charge in a year is the empty string, never 0.
  */
-function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
+function subscriptionTable(p: ClientSafeProposal, result: ModeResult, listResult: ModeResult | undefined): RenderTable {
   const years = result.total_years_inr.length
-  const d = p.inputs.discount_pct
   const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
   const trace = result.trace
   const platform = traceValue(trace, 'Platform fee (Year 1)') ?? 0
@@ -180,16 +178,17 @@ function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTab
     rows.push([line.label, ...line.years_inr.map(B), B(line.tco_inr)])
   }
 
-  const netYears = netYearsOf(result.total_years_inr, d)
+  const t = totalRowInputs(p, result, listResult)
   rows.push(
     ...discountTotalRows({
       label: 'TOTAL',
-      years: result.total_years_inr,
-      netYears,
-      tco: result.total_tco_inr,
-      netTco: result.net_total_tco_inr,
-      discount_pct: d,
+      years: t.years,
+      netYears: t.netYears,
+      tco: t.tco,
+      netTco: t.netTco,
+      discount_pct: p.inputs.discount_pct,
       discount_shown: p.discount_shown,
+      overrides: t.overrides,
     }),
   )
 
@@ -200,8 +199,8 @@ function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTab
  * the subscription framing (fixes complaint 1: "SaaS proposal has no
  * commercial table"). Same section heading either way — only the shape of
  * the numbers underneath changes with the deployment mode. */
-function commercialTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
-  return result.mode === 'onprem' ? commercialSummaryTable(p, result) : subscriptionTable(p, result)
+function commercialTable(p: ClientSafeProposal, result: ModeResult, listResult: ModeResult | undefined): RenderTable {
+  return result.mode === 'onprem' ? commercialSummaryTable(p, result, listResult) : subscriptionTable(p, result, listResult)
 }
 
 /**
@@ -239,6 +238,7 @@ function numberedSections(entries: RenderSection[]): RenderSection[] {
 
 function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRenderModel {
   const result = p.results[0]
+  const listResult = p.list_results?.[0]
   const mode = result.mode
   const driver = mode === 'onprem' ? ONPREM_PRICE_DRIVER : SAAS_HYBRID_PRICE_DRIVER
   const title = 'Commercial Proposal'
@@ -249,7 +249,7 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
 
   const core = numberedSections([
     { heading: 'What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
-    { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialTable(p, result) },
+    { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialTable(p, result, listResult) },
     ...(usageTable ? [{ heading: 'Usage-Based Items (billed on actuals)', table: usageTable }] : []),
     { ...buildInclusionsExclusionsSection(p), heading: 'Inclusions & Exclusions' },
     { heading: 'Scope & Coverage', table: scopeTable(p) },
@@ -302,7 +302,6 @@ function buildCompare(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
   }
   const results = { onprem, hybrid, saas }
   const years = onprem.total_years_inr.length
-  const d = p.inputs.discount_pct
 
   const columns = ['Line Item', 'Option A: On-Prem', 'Option B: Hybrid', 'Option C: SaaS']
   // Dynamic only: CM is always in scope, but DSPM/DAM/Endpoint rows exist
@@ -325,33 +324,47 @@ function buildCompare(p: ClientSafeProposal, asOfDate: string): ProposalRenderMo
     rows.push(moduleRow('Endpoint Annual', 'endpoint', results, 'recurring_inr'))
   }
 
-  const totalYear1List = [onprem.total_year1_inr, hybrid.total_year1_inr, saas.total_year1_inr]
-  const totalYear1Net = totalYear1List.map((v) => Math.round(v * (1 - Math.min(Math.max(d, 0), 1))))
-  const totalAnnualList = [onprem.total_recurring_inr, hybrid.total_recurring_inr, saas.total_recurring_inr]
-  const totalAnnualNet = totalAnnualList.map((v) => Math.round(v * (1 - Math.min(Math.max(d, 0), 1))))
-  const totalTcoList = [onprem.total_tco_inr, hybrid.total_tco_inr, saas.total_tco_inr]
-  const totalTcoNet = [onprem.net_total_tco_inr, hybrid.net_total_tco_inr, saas.net_total_tco_inr]
+  // Per-mode list-vs-negotiated tuple (worksheet overrides only ever apply
+  // to the single deployment mode being edited, but the same
+  // pricing_overrides map is applied uniformly to all three compare-mode
+  // results by wizardLogic.buildRecord, so this reads identically here).
+  const listFor = (mode: DeploymentMode): ModeResult | undefined => p.list_results?.find((r) => r.mode === mode)
+  const tOnprem = totalRowInputs(p, onprem, listFor('onprem'))
+  const tHybrid = totalRowInputs(p, hybrid, listFor('hybrid'))
+  const tSaas = totalRowInputs(p, saas, listFor('saas'))
+  const overridesOn = tOnprem.overrides || tHybrid.overrides || tSaas.overrides
 
-  const compareTotalRows = (
-    label: string,
-    list: number[],
-    net: number[],
-  ): (string | number)[][] => {
-    if (d > 0 && p.discount_shown) {
-      const disc = list.map((v, i) => -(v - net[i]))
-      return [
-        [`${label} — List`, ...list.map(blankIfZero)],
-        [`Discount (${fmtPct(d)})`, ...disc.map(blankIfZero)],
-        [`${label} — Net`, ...net.map(blankIfZero)],
-      ]
-    }
-    if (d > 0 && !p.discount_shown) return [[label, ...net.map(blankIfZero)]]
-    return [[label, ...list.map(blankIfZero)]]
-  }
+  // discountTotalRows is generic over "one column per array entry" — reused
+  // here with one column per MODE (On-Prem/Hybrid/SaaS) instead of one
+  // column per year, so the exact same List/Adjustment/Negotiated (or
+  // List/Discount/Net) three-row pattern renders in the compare table too.
+  const compareTotalRows = (label: string, list: number[], net: number[]): (string | number)[][] =>
+    discountTotalRows({
+      label,
+      years: list,
+      netYears: net,
+      discount_pct: p.inputs.discount_pct,
+      discount_shown: p.discount_shown,
+      overrides: overridesOn,
+    })
 
-  rows.push(...compareTotalRows('Total Year 1', totalYear1List, totalYear1Net))
-  rows.push(...compareTotalRows('Total Annual', totalAnnualList, totalAnnualNet))
-  rows.push(...compareTotalRows(`${years}-Year TCO`, totalTcoList, totalTcoNet))
+  rows.push(
+    ...compareTotalRows(
+      'Total Year 1',
+      [tOnprem.year1, tHybrid.year1, tSaas.year1],
+      [tOnprem.netYear1, tHybrid.netYear1, tSaas.netYear1],
+    ),
+  )
+  rows.push(
+    ...compareTotalRows(
+      'Total Annual',
+      [tOnprem.recurring, tHybrid.recurring, tSaas.recurring],
+      [tOnprem.netRecurring, tHybrid.netRecurring, tSaas.netRecurring],
+    ),
+  )
+  rows.push(
+    ...compareTotalRows(`${years}-Year TCO`, [tOnprem.tco, tHybrid.tco, tSaas.tco], [tOnprem.netTco, tHybrid.netTco, tSaas.netTco]),
+  )
 
   const table: RenderTable = { title: 'Your Options', columns, rows }
   const title = 'Commercial Proposal — Compare Deployment Options'

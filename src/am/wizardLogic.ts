@@ -6,6 +6,7 @@
 import { price, priceAllModes } from '../lib/engine2/engine2'
 import type { DealInputs, DeploymentMode, EstateRate, ModeResult, RateCard } from '../lib/engine2/types'
 import type { ProposalRecord, SizingLine } from '../lib/proposal/clientSafe'
+import { applyPricingOverrides, hasOverrides } from '../lib/proposal/pricingOverrides'
 import type { ProposalDraft, ProposalInputs, ProposalTotals } from '../lib/proposal/proposalsRepo'
 import type { ProposalRenderModel, RenderSection } from '../lib/proposal/formats'
 
@@ -186,14 +187,32 @@ export function totalsFromResult(result: ModeResult): ProposalTotals {
   }
 }
 
-/** Price the draft (all three modes in compare mode) into a full internal record. */
+/**
+ * Price the draft (all three modes in compare mode) into a full internal
+ * record. When the AM has negotiated anything on the Pricing Worksheet
+ * (Step3Commercials — inputs.pricing_overrides), every priced ModeResult is
+ * run through applyPricingOverrides BEFORE it lands in `results`, so every
+ * downstream consumer (totalsFromResult, toClientSafe, the format builders,
+ * excelExport/wordExport) sees negotiated numbers automatically — none of
+ * them need to know the worksheet exists. `list_results` keeps the
+ * pre-override priced results alongside, so formats can still render a
+ * "List vs Negotiated" TOTAL row (see formats/shared.ts's totalRowInputs).
+ * With no worksheet edits, `results` IS the plain engine output and
+ * `list_results` is omitted — engine2's own discount_pct handling (legacy
+ * single-% discount) is untouched and still applies for those records.
+ */
 export function buildRecord(draft: ProposalDraft, card: RateCard): ProposalRecord {
-  const results = draft.inputs.compare_all_modes
+  const priced = draft.inputs.compare_all_modes
     ? (() => {
         const all = priceAllModes(card, draft.inputs)
         return [all.onprem, all.hybrid, all.saas]
       })()
     : [price(card, draft.inputs)]
+
+  const overrides = draft.inputs.pricing_overrides
+  const negotiated = hasOverrides(overrides)
+  const results = negotiated ? priced.map((r) => applyPricingOverrides(r, overrides)) : priced
+
   return {
     id: draft.id,
     customer_name: draft.customer_name,
@@ -205,6 +224,7 @@ export function buildRecord(draft: ProposalDraft, card: RateCard): ProposalRecor
     discount_shown: draft.discount_shown,
     sizing_lines: buildSizingLines(card, draft.inputs),
     usage_rates: card.usage_rates.map((u) => ({ label: u.label, unit: u.unit, unit_price_inr: u.unit_price_inr })),
+    list_results: negotiated ? priced : undefined,
   }
 }
 

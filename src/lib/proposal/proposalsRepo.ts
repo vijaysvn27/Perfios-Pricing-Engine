@@ -14,6 +14,7 @@ import { supabase } from '../supabase'
 import { isMissingTable } from '../rateCard/repo'
 import type { DealInputs } from '../engine2/types'
 import type { Channel } from './clientSafe'
+import type { PricingOverrides } from './pricingOverrides'
 
 const TABLE = 'proposals'
 
@@ -29,6 +30,17 @@ export interface ProposalInputs extends DealInputs {
   /** Narrative overrides; blank/absent means "use the scope-generated copy". */
   executive_summary_override?: string
   solution_overview_override?: string
+  /**
+   * Per-cell negotiated prices from the AM Pricing Worksheet (Step3Commercials
+   * — see pricingOverrides.ts). jsonb-additive: absent on every record saved
+   * before this feature, and mergeQuestionnaireInputs (questionnaireImport.ts)
+   * never sets it, so an in-progress questionnaire import can't clobber a
+   * worksheet the AM already negotiated. Presence (hasOverrides) supersedes
+   * the legacy discount_pct for that record's negotiated totals; discount_pct
+   * itself is untouched and still honored by engine2's price() for any record
+   * that has no pricing_overrides.
+   */
+  pricing_overrides?: PricingOverrides
 }
 
 /** Summary numbers snapshot (the `totals` jsonb column) — for the list view
