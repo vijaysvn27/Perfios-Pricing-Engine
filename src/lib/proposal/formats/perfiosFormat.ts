@@ -10,7 +10,18 @@ import type { ComponentLine, DeploymentMode, ModeResult } from '../../engine2/ty
 import { buildCover } from './cover'
 import { buildInclusionsExclusionsSection } from './inclusions'
 import { buildSizingSection } from './sizing'
-import { discountTotalRows, findLine, fmtPct, includedDpNote, netYearsOf, whatYouGetBullets } from './shared'
+import {
+  CONSENT_MODIFICATION_CAVEAT,
+  discountTotalRows,
+  findLine,
+  fmtPct,
+  formatINR,
+  formatPerUserRate,
+  includedDpNote,
+  netYearsOf,
+  traceValue,
+  whatYouGetBullets,
+} from './shared'
 import type { ProposalRenderModel, RenderSection, RenderTable } from './types'
 
 const ONPREM_PRICE_DRIVER =
@@ -103,6 +114,120 @@ function commercialSummaryTable(p: ClientSafeProposal, result: ModeResult): Rend
 }
 
 /**
+ * SaaS/Hybrid single-mode Commercial Summary — a proper subscription table
+ * (owner complaint: "SaaS proposal has no commercial table"). Every rupee
+ * figure is read straight off ModeResult/trace fields the engine already
+ * computed — platform fee, Year-1 overage, Year-2+ overage, implementation
+ * (engine2.ts's priceCmSaas pushes exactly these trace steps). The only
+ * arithmetic performed here is summing those same sourced figures across
+ * the years they actually bill into a per-row TCO — the identical roll-up
+ * buildLine() itself performs internally for ComponentLine.tco_inr. The
+ * floor guard the engine carries (`recurring = max(floor, platform +
+ * y2Overage)`) never actually binds once the platform fee recurs (platform
+ * alone always exceeds 30% of itself), so "Platform fee (every year) +
+ * Overage" always foots exactly to the CM line's own recurring_inr — the
+ * TOTAL row below is still sourced straight from the engine's own
+ * total_years_inr/total_tco_inr, not from summing these rows, so any future
+ * change to that invariant can never silently under- or over-state the
+ * total.
+ */
+function subscriptionTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
+  const years = result.total_years_inr.length
+  const d = p.inputs.discount_pct
+  const columns = ['Component', ...Array.from({ length: years }, (_, i) => `Year ${i + 1}`), `${years}-Year TCO`]
+  const trace = result.trace
+  const platform = traceValue(trace, 'Platform fee (annual)') ?? 0
+  const implementation = traceValue(trace, 'Implementation (one-time)') ?? 0
+  const y1Overage = traceValue(trace, 'Year 1 overage') ?? 0
+  const y2Overage = traceValue(trace, 'Year 2+ overage') ?? 0
+  const included = result.saas_included_dp ?? 0
+  const rate = result.saas_per_user_rate ?? 0
+  const DASH = '—'
+
+  const rows: (string | number)[][] = []
+
+  // Platform fee recurs every year as the committed base (priceCmSaas:
+  // recurring = platform + y2Overage), so it's a flat value across every
+  // year column, not a Year-1-only line.
+  rows.push([
+    `Platform fee (includes ${included.toLocaleString('en-IN')} data principals)`,
+    ...Array.from({ length: years }, () => platform),
+    platform * years,
+  ])
+
+  // Overage — data principals beyond the bundle — only when there is any,
+  // in Year 1 or Year 2+ (omitted entirely for a deal sized within the
+  // bundle, rather than printing a row of zeroes).
+  if (y1Overage > 0 || y2Overage > 0) {
+    rows.push([
+      `Additional data principals beyond the bundle — ${formatPerUserRate(rate)}/DP/year`,
+      y1Overage,
+      ...Array.from({ length: years - 1 }, () => y2Overage),
+      y1Overage + y2Overage * (years - 1),
+    ])
+  }
+
+  rows.push([
+    'Implementation (one-time)',
+    implementation,
+    ...Array.from({ length: years - 1 }, () => DASH),
+    implementation,
+  ])
+
+  // Estate module lines (DSPM/DAM/Endpoint) — unchanged from the plain
+  // Commercial Summary table, only relevant for Hybrid (SaaS is CM-only).
+  for (const line of result.lines) {
+    if (line.component_key === 'cm' || !line.included) continue
+    rows.push([line.label, ...line.years_inr, line.tco_inr])
+  }
+
+  const netYears = netYearsOf(result.total_years_inr, d)
+  rows.push(
+    ...discountTotalRows({
+      label: 'TOTAL',
+      years: result.total_years_inr,
+      netYears,
+      tco: result.total_tco_inr,
+      netTco: result.net_total_tco_inr,
+      discount_pct: d,
+      discount_shown: p.discount_shown,
+    }),
+  )
+
+  return { title: 'Commercial Summary (INR, exclusive of taxes)', columns, rows }
+}
+
+/** Dispatch: On-Prem keeps the plain per-component table; SaaS/Hybrid get
+ * the subscription framing (fixes complaint 1: "SaaS proposal has no
+ * commercial table"). Same section heading either way — only the shape of
+ * the numbers underneath changes with the deployment mode. */
+function commercialTable(p: ClientSafeProposal, result: ModeResult): RenderTable {
+  return result.mode === 'onprem' ? commercialSummaryTable(p, result) : subscriptionTable(p, result)
+}
+
+/**
+ * "Usage-Based Items (billed on actuals)" — billed outside the TCO, on
+ * actuals (fixes complaint 4: the ₹1/OCR usage rate was missing from every
+ * proposal). The per-DP overage row only applies to SaaS/Hybrid (On-Prem
+ * has no per-user rate); the rate-card usage rates (OCR — see
+ * RATE_CARD_SEED.usage_rates / clientSafe.ts's usage_rates plumbing) apply
+ * to every deployment mode, since OCR processing is not mode-specific.
+ * Returns undefined (section omitted) when there is nothing to show.
+ */
+function usageItemsTable(p: ClientSafeProposal, result: ModeResult): RenderTable | undefined {
+  const rows: (string | number)[][] = []
+  const rate = result.saas_per_user_rate
+  if (rate !== undefined) {
+    rows.push(['Additional data principals beyond the included bundle', 'per DP per year', formatPerUserRate(rate)])
+  }
+  for (const u of p.usage_rates ?? []) {
+    rows.push([u.label, u.unit, formatINR(u.unit_price_inr)])
+  }
+  if (rows.length === 0) return undefined
+  return { title: 'Usage-Based Items (billed on actuals)', columns: ['Item', 'Unit', 'Rate'], rows }
+}
+
+/**
  * Numbers each core section 1..N as it's appended — dynamic, not hardcoded,
  * so the "Sizing Estimate" section(s) (always present for a single-mode
  * build: platform sizing for SaaS/Hybrid, the inline infra BOM for On-Prem —
@@ -121,14 +246,20 @@ function buildSingleMode(p: ClientSafeProposal, asOfDate: string): ProposalRende
 
   const sizingSections = buildSizingSection(p, result)
   const includedNote = includedDpNote(p)
+  const usageTable = usageItemsTable(p, result)
 
   const core = numberedSections([
     { heading: 'What You Get — Consent Manager (7 modules)', bullets: whatYouGetBullets() },
-    { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialSummaryTable(p, result) },
+    { heading: 'Commercial Summary (INR, exclusive of taxes)', table: commercialTable(p, result) },
+    ...(usageTable ? [{ heading: 'Usage-Based Items (billed on actuals)', table: usageTable }] : []),
     { ...buildInclusionsExclusionsSection(p), heading: 'Inclusions & Exclusions' },
     { heading: 'Scope & Coverage', table: scopeTable(p) },
     ...sizingSections,
-    { heading: 'What Drives Your Price', paragraphs: [driver, ...(includedNote ? [includedNote] : [])] },
+    {
+      heading: 'What Drives Your Price',
+      paragraphs: [driver, ...(includedNote ? [includedNote] : [])],
+      ...(includedNote ? { bullets: [CONSENT_MODIFICATION_CAVEAT] } : {}),
+    },
     { heading: 'Payment Terms', bullets: paymentTermsBullets(p.validity_days) },
   ])
 

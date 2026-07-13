@@ -1,7 +1,14 @@
 import type { RateCard, SaasInfraBasis, SaasTier } from '../../lib/engine2/types'
 import { formatINR } from '../../lib/format'
 import { card, inp, th, toNum } from '../styles'
-import { SAAS_PRICING_EXPLAINER, basisSwitchPreview, tierDescription, type UpdateCard } from './helpers'
+import {
+  SAAS_PRICING_EXPLAINER,
+  basisSwitchPreview,
+  saasVsOnPremYear1,
+  tierDerivedRate,
+  tierDescription,
+  type UpdateCard,
+} from './helpers'
 
 interface Props {
   saas: RateCard['saas_cm']
@@ -68,61 +75,117 @@ export default function SaasCmGroup({ saas, fullCard, update }: Props) {
               <th className={th}>User cap</th>
               <th className={`${th} ${onpremActive ? activeCol : ''}`}>Infra $/mo (on-prem ref){onpremActive ? ' — ACTIVE' : ''}</th>
               <th className={`${th} ${onpremActive ? '' : activeCol}`}>Infra $/mo (SaaS v3){onpremActive ? '' : ' — ACTIVE'}</th>
-              <th className={`${th} italic text-slate-300`}>Overage ₹/user (legacy — not used)</th>
+              <th className={th}>Included DPs (bundle)</th>
+              <th className={th}>₹/DP (derived)</th>
               <th className={th}>What this drives</th>
             </tr>
           </thead>
           <tbody>
-            {saas.tiers.map((t, i) => (
-              <tr key={t.tier_key} className="border-t border-slate-100 align-top">
-                <td className="px-2 py-1.5 text-sm text-slate-700">{t.label}</td>
-                <td className="px-2 py-1.5">
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={`${inp} w-28 text-right`}
-                    value={t.user_cap}
-                    onChange={(e) => patchTier(i, { user_cap: toNum(e.target.value) })}
-                  />
-                </td>
-                <td className={`px-2 py-1.5 ${onpremActive ? activeCol : ''}`}>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={`${inp} w-24 text-right`}
-                    value={t.infra_usd_mo_onprem_ref}
-                    onChange={(e) => patchTier(i, { infra_usd_mo_onprem_ref: toNum(e.target.value) })}
-                  />
-                </td>
-                <td className={`px-2 py-1.5 ${onpremActive ? '' : activeCol}`}>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={`${inp} w-24 text-right`}
-                    value={t.infra_usd_mo_saas_v3}
-                    onChange={(e) => patchTier(i, { infra_usd_mo_saas_v3: toNum(e.target.value) })}
-                  />
-                </td>
-                <td className="px-2 py-1.5 opacity-50">
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={`${inp} w-20 text-right text-slate-400`}
-                    value={t.overage_inr_per_user}
-                    onChange={(e) => patchTier(i, { overage_inr_per_user: toNum(e.target.value) })}
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-xs text-slate-500">{tierDescription(t.label)}</td>
-              </tr>
-            ))}
+            {saas.tiers.map((t, i) => {
+              const derived = tierDerivedRate(fullCard, t)
+              return (
+                <tr key={t.tier_key} className="border-t border-slate-100 align-top">
+                  <td className="px-2 py-1.5 text-sm text-slate-700">{t.label}</td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      className={`${inp} w-28 text-right`}
+                      value={t.user_cap}
+                      onChange={(e) => patchTier(i, { user_cap: toNum(e.target.value) })}
+                    />
+                  </td>
+                  <td className={`px-2 py-1.5 ${onpremActive ? activeCol : ''}`}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      className={`${inp} w-24 text-right`}
+                      value={t.infra_usd_mo_onprem_ref}
+                      onChange={(e) => patchTier(i, { infra_usd_mo_onprem_ref: toNum(e.target.value) })}
+                    />
+                  </td>
+                  <td className={`px-2 py-1.5 ${onpremActive ? '' : activeCol}`}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      className={`${inp} w-24 text-right`}
+                      value={t.infra_usd_mo_saas_v3}
+                      onChange={(e) => patchTier(i, { infra_usd_mo_saas_v3: toNum(e.target.value) })}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      className={`${inp} w-28 text-right`}
+                      value={t.included_dp}
+                      onChange={(e) => patchTier(i, { included_dp: toNum(e.target.value) })}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono text-sm text-slate-700">
+                    ₹{derived.rate_inr_per_dp.toFixed(2)}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs text-slate-500">{tierDescription(t.label)}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
       <p className="mt-2 text-xs text-slate-500">{SAAS_PRICING_EXPLAINER}</p>
+
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          SaaS vs On-Prem — Year 1
+        </p>
+        <p className="mb-2 text-xs text-slate-400">
+          For a client sized exactly at each tier&apos;s cap: SaaS Year 1 (implementation + platform fee + overage
+          beyond the bundle) vs. On-Prem Year 1 for the slab that covers the same DP count. A flagged row means SaaS
+          is not undercutting On-Prem at that size — tune included DPs / licence.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={th}>Tier (at cap)</th>
+                <th className={th}>SaaS Year 1</th>
+                <th className={th}>On-Prem Year 1</th>
+                <th className={th}>On-Prem slab</th>
+                <th className={th}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {saasVsOnPremYear1(fullCard).map((row) => (
+                <tr key={row.tier_key} className="border-t border-slate-100">
+                  <td className="px-2 py-1.5 text-sm text-slate-700">{row.tier_label}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-sm text-slate-700">
+                    {formatINR(row.saas_year1_at_cap_inr)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono text-sm text-slate-700">
+                    {formatINR(row.onprem_year1_inr)}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs text-slate-500">{row.onprem_slab_label}</td>
+                  <td className="px-2 py-1.5">
+                    {row.saas_gte_onprem ? (
+                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        SaaS ≥ On-Prem — tune included DPs / licence
+                      </span>
+                    ) : (
+                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        SaaS below On-Prem
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="mt-4 border-t border-slate-100 pt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">

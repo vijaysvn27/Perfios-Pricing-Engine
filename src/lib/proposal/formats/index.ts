@@ -1,10 +1,15 @@
 import type { ClientSafeProposal } from '../clientSafe'
 import { build as buildModuleWise } from './moduleWise'
-import { build as buildSaasStyle } from './saasStyle'
 import { build as buildPerfios } from './perfiosFormat'
 import type { ProposalRenderModel } from './types'
 
-export type FormatKind = 'module_wise' | 'saas_style' | 'perfios'
+/**
+ * Two formats only ("get things in order" — the old third option, "SaaS
+ * style", duplicated the Perfios format's subscription framing under a
+ * confusingly similar name; that framing now lives inside 'perfios' itself
+ * for saas/hybrid deals, see perfiosFormat.ts's subscriptionTable).
+ */
+export type FormatKind = 'module_wise' | 'perfios'
 
 /**
  * `asOfDate` (YYYY-MM-DD) drives the cover's date label and reference code.
@@ -16,8 +21,6 @@ export function buildFormat(kind: FormatKind, p: ClientSafeProposal, asOfDate: s
   switch (kind) {
     case 'module_wise':
       return buildModuleWise(p, asOfDate)
-    case 'saas_style':
-      return buildSaasStyle(p, asOfDate)
     case 'perfios':
       return buildPerfios(p, asOfDate)
   }

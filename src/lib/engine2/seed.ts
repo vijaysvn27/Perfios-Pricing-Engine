@@ -17,12 +17,16 @@ export const RATE_CARD_SEED: RateCard = {
     support_pct: 0.3,
   },
   saas_cm: {
+    // included_dp = DPs bundled in the platform fee (owner 2026-07-13:
+    // "Upto 5L DP, we include 3L in the bundle. Rest can be overage").
+    // Tier 0's 3L anchor is owner-confirmed; the other tiers are seeded at
+    // 60% of cap PROVISIONALLY — commercial team to confirm/tune in admin.
     tiers: [
-      { tier_key: 'tier0', label: 'Tier 0', user_cap: 500_000, infra_usd_mo_onprem_ref: 1347, infra_usd_mo_saas_v3: 650, overage_inr_per_user: 7 },
-      { tier_key: '10l', label: '10L', user_cap: 1_000_000, infra_usd_mo_onprem_ref: 1549, infra_usd_mo_saas_v3: 950, overage_inr_per_user: 4 },
-      { tier_key: '25l', label: '25L', user_cap: 2_500_000, infra_usd_mo_onprem_ref: 3671, infra_usd_mo_saas_v3: 1980, overage_inr_per_user: 3 },
-      { tier_key: '50l', label: '50L', user_cap: 5_000_000, infra_usd_mo_onprem_ref: 4538, infra_usd_mo_saas_v3: 3089, overage_inr_per_user: 2 },
-      { tier_key: '100l', label: '100L', user_cap: 10_000_000, infra_usd_mo_onprem_ref: 7543, infra_usd_mo_saas_v3: 5385, overage_inr_per_user: 2 },
+      { tier_key: 'tier0', label: 'Tier 0', user_cap: 500_000, included_dp: 300_000, infra_usd_mo_onprem_ref: 1347, infra_usd_mo_saas_v3: 650, overage_inr_per_user: 7 },
+      { tier_key: '10l', label: '10L', user_cap: 1_000_000, included_dp: 600_000, infra_usd_mo_onprem_ref: 1549, infra_usd_mo_saas_v3: 950, overage_inr_per_user: 4 },
+      { tier_key: '25l', label: '25L', user_cap: 2_500_000, included_dp: 1_500_000, infra_usd_mo_onprem_ref: 3671, infra_usd_mo_saas_v3: 1980, overage_inr_per_user: 3 },
+      { tier_key: '50l', label: '50L', user_cap: 5_000_000, included_dp: 3_000_000, infra_usd_mo_onprem_ref: 4538, infra_usd_mo_saas_v3: 3089, overage_inr_per_user: 2 },
+      { tier_key: '100l', label: '100L', user_cap: 10_000_000, included_dp: 6_000_000, infra_usd_mo_onprem_ref: 7543, infra_usd_mo_saas_v3: 5385, overage_inr_per_user: 2 },
     ],
     // 2026-07-13 (owner direction, supersedes D1's conservative default):
     // "overage is currently built with On-prem pricing and not the SaaS
@@ -53,4 +57,8 @@ export const RATE_CARD_SEED: RateCard = {
     deployment_pct: 0.18,
     amc_pct: 0.12,
   },
+  // Billed on actuals, outside the TCO (Honda "Usage-based Items" pattern).
+  usage_rates: [
+    { rate_key: 'ocr', label: 'OCR processing (scanned / physical consent capture)', unit: 'per document', unit_price_inr: 1 },
+  ],
 }

@@ -67,7 +67,9 @@ export function buildNarrative(p: ClientSafeProposal): Narrative {
   const solutionOverviewParts = [
     'At the core is the Consent Manager: DPDP notices in 22 languages, a self-service Data Principal Rights ' +
       'Portal, granular cookie consent, a governance dashboard with maker-checker and audit trails, breach ' +
-      'and vendor modules, and DPIA with risk scoring — all seven modules bundled, not sold piecemeal.',
+      'and vendor modules, and DPIA with risk scoring — all seven modules bundled, not sold piecemeal. ' +
+      'Automated DPIA activates fully when DSPM/DAM are in scope (their discovery feeds the assessment); a ' +
+      'questionnaire-based DPIA is available as an interim otherwise.',
   ]
   if (mode !== 'saas') {
     if (p.inputs.modules.dspm) {

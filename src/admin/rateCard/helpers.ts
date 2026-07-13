@@ -91,14 +91,81 @@ export function slabDescription(label: string): string {
 }
 
 export function tierDescription(label: string): string {
-  return `Applies while the committed user base fits this cap — sets the hosting infra cost that feeds the per-user rate for the ${label} tier.`
+  return `Applies while the committed user base fits this cap — its included-DP bundle and hosting infra set the ₹/DP rate for the ${label} tier.`
 }
 
-/** Explainer line shown under the SaaS CM tier table (2026-07-07 per-user
- * methodology): the per-user derivation plus the Year-2+ rule, in one
- * sentence so admins see the model without opening the trace. */
+/** Explainer line shown under the SaaS CM tier table (bundled-DP model,
+ * 2026-07-13 owner direction, corrected): the bundle + overage-rate
+ * derivation plus the Year-2+ rule, in one sentence so admins see the model
+ * without opening the trace. */
 export const SAAS_PRICING_EXPLAINER =
-  'SaaS pricing is per-user: (licence + infra) ÷ committed users; Year 2+ = greater of 30% of Year-1 platform fee or actual users × rate.'
+  "SaaS pricing is bundled: the tier's platform fee (licence + infra) includes a set number of data principals and recurs every year; DPs beyond the bundle are overage at ceil(platform ÷ tier cap) ₹/DP, billed from Year 1. Year 2+ = greater of 30% of the Year-1 platform fee or the platform fee plus actual overage."
+
+export interface TierDerivedRate {
+  infra_inr_yr: number
+  platform_fee_inr_yr: number
+  /** ceil(platform ÷ tier user_cap), whole rupees — mirrors priceCmSaas's overage rate exactly (0 when user_cap <= 0). */
+  rate_inr_per_dp: number
+}
+
+/**
+ * Per-tier derived hosting economics under the card's ACTIVE infra basis —
+ * mirrors priceCmSaas's platform-fee and overage-rate arithmetic exactly
+ * (rate = ceil(platform ÷ tier user_cap), not ÷ included_dp — the historical
+ * ₹7/4/3/2/2 column is ceil(platform/cap) at the on-prem-ref basis), so the
+ * admin table can show a live "₹/DP (derived)" figure per row that recomputes
+ * as user_cap / FX / SG&A / licence / basis change.
+ */
+export function tierDerivedRate(card: RateCard, tier: SaasTier): TierDerivedRate {
+  const s = card.saas_cm
+  const usd_mo = s.infra_basis === 'onprem_ref' ? tier.infra_usd_mo_onprem_ref : tier.infra_usd_mo_saas_v3
+  const infra_inr_yr = Math.round(usd_mo * 12 * s.fx_inr_per_usd * (1 + s.sgna_uplift_pct))
+  const platform_fee_inr_yr = s.annual_licence_inr + infra_inr_yr
+  const rate_inr_per_dp = tier.user_cap > 0 ? Math.ceil(platform_fee_inr_yr / tier.user_cap) : 0
+  return { infra_inr_yr, platform_fee_inr_yr, rate_inr_per_dp }
+}
+
+export interface TierYear1Comparison {
+  tier_key: string
+  tier_label: string
+  /** impl + platform + (cap − included) × rate, at the tier's own user_cap — mirrors priceCmSaas at baseY1 = cap. */
+  saas_year1_at_cap_inr: number
+  onprem_year1_inr: number
+  onprem_slab_label: string
+  /** true when SaaS Year 1 at the cap is >= the comparable On-Prem Year 1 (tuning flag: "tune included DPs / licence"). */
+  saas_gte_onprem: boolean
+}
+
+/**
+ * "SaaS vs On-Prem — Year 1" tuning surface: for each SaaS tier, prices a
+ * client sized exactly at the tier's cap under both SaaS (this tier, with
+ * Year-1 overage beyond the bundle) and On-Prem (the first slab whose cap
+ * covers the tier cap — same pickByCap rule engine2 uses for slabs), so the
+ * commercial team can see where SaaS undercuts On-Prem and where it doesn't.
+ */
+export function saasVsOnPremYear1(card: RateCard): TierYear1Comparison[] {
+  const { tiers, implementation_pct, annual_licence_inr } = card.saas_cm
+  const { slabs, deployment_pct, support_pct } = card.onprem_cm
+  const impl = Math.round(annual_licence_inr * implementation_pct)
+
+  return tiers.map((t) => {
+    const derived = tierDerivedRate(card, t)
+    const overageAtCap = Math.round(Math.max(0, t.user_cap - t.included_dp) * derived.rate_inr_per_dp)
+    const saas_year1_at_cap_inr = impl + derived.platform_fee_inr_yr + overageAtCap
+
+    const slab = slabs.find((s) => s.dp_cap >= t.user_cap) ?? slabs[slabs.length - 1]
+    const onprem_year1_inr = Math.round(slab.annual_licence_inr * (1 + deployment_pct + support_pct))
+
+    return {
+      tier_key: t.tier_key,
+      tier_label: t.label,
+      saas_year1_at_cap_inr,
+      onprem_year1_inr,
+      onprem_slab_label: slab.label,
+      saas_gte_onprem: saas_year1_at_cap_inr >= onprem_year1_inr,
+    }
+  })
+}
 
 const ESTATE_RATE_DESCRIPTIONS: Record<string, string> = {
   database: 'Each discovered database adds to the shared estate base (charged once across DSPM/DAM).',

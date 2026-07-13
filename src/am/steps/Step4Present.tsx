@@ -27,9 +27,8 @@ interface Props {
 }
 
 const FORMATS: { kind: FormatKind; label: string; hint: string }[] = [
-  { kind: 'module_wise', label: 'Module-wise', hint: 'One line per module, Year 1..N + TCO.' },
-  { kind: 'saas_style', label: 'SaaS-style', hint: 'Committed base + per-user rate + implementation framing.' },
-  { kind: 'perfios', label: 'Perfios format', hint: 'Client Proposal layout (comparison layout in compare mode).' },
+  { kind: 'perfios', label: 'Perfios format', hint: 'The full client proposal — adapts to the deployment mode.' },
+  { kind: 'module_wise', label: 'Module-wise', hint: 'Per-module pricing view for module-based price requests.' },
 ]
 
 /** Fetch the bundled logo as raw bytes for the Excel/Word exports' embedded

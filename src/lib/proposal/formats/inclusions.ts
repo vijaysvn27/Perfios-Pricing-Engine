@@ -4,7 +4,7 @@
 // an explicit, scope-aware, GROUPED statement of what is and isn't in the
 // deal — named unselected modules under exclusions, quantified selected
 // modules under inclusions, each grouped under a labelled sub-heading. Kept
-// in one place so the three formats can never drift on wording, mirroring
+// in one place so the two formats can never drift on wording, mirroring
 // how shared.ts centralizes the CM module copy.
 //
 // Rendering note: RenderModelView / excelExport (both out of scope for this
@@ -61,11 +61,30 @@ const CM_CAPABILITY_BULLETS: string[] = [
 
 const CM_UNLIMITED_LINE = 'Unlimited consents and consent actions per data principal — no per-transaction charges.'
 
-/** "Platform & Licences:" group — the 7 CM capability bullets, the unlimited-
- * consents line, and (mode-permitting) one quantified bullet per selected
- * estate module. */
+/** Automated DPIA needs DSPM/DAM's discovery feed (owner feedback: "DPIA
+ * cannot be delivered standalone in CM-only deals"). SaaS is CM-only, so it
+ * never qualifies regardless of module toggles — same rule
+ * scopeExclusionBullets/scopeNote already apply to the estate modules
+ * themselves. */
+function dpiaAutomated(p: ClientSafeProposal): boolean {
+  return p.inputs.deployment_mode !== 'saas' && (p.inputs.modules.dspm || p.inputs.modules.dam)
+}
+
+const DPIA_SCOPE_NOTE = 'Consent Manager — all modules bundled; DPIA activates fully with DSPM/DAM.'
+
+/** "Platform & Licences:" group — the 7 CM capability bullets (minus DPIA
+ * when it can't run automated — see dpiaAutomated), the unlimited-consents
+ * line, and (mode-permitting) one quantified bullet per selected estate
+ * module. */
 function platformAndLicenceBullets(p: ClientSafeProposal): string[] {
-  const bullets: string[] = ['Platform & Licences:', ...CM_CAPABILITY_BULLETS, CM_UNLIMITED_LINE]
+  const automated = dpiaAutomated(p)
+  // DPIA (bullet 7) needs DSPM/DAM's automated discovery feed to run in
+  // full; in a CM-only deal it moves to Scope exclusions instead (see
+  // scopeExclusionBullets) rather than being listed as a plain inclusion.
+  const capabilityBullets = automated ? CM_CAPABILITY_BULLETS : CM_CAPABILITY_BULLETS.slice(0, 6)
+  const bullets: string[] = ['Platform & Licences:', ...capabilityBullets]
+  if (!automated) bullets.push(DPIA_SCOPE_NOTE)
+  bullets.push(CM_UNLIMITED_LINE)
 
   const mode = p.inputs.deployment_mode
   if (mode !== 'saas') {
@@ -176,6 +195,9 @@ function scopeExclusionBullets(p: ClientSafeProposal): string[] {
     if (isExcluded(key)) {
       bullets.push(`${MODULE_EXCLUSION_LABEL[key]} — not in current scope; available as a priced add-on.`)
     }
+  }
+  if (!dpiaAutomated(p)) {
+    bullets.push('Automated DPIA — requires DSPM/DAM in scope; questionnaire-based DPIA available as an interim.')
   }
   bullets.push(
     'Custom connectors beyond the standard set — bespoke integrations to systems outside the standard connector ' +

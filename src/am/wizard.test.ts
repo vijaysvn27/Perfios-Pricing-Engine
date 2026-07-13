@@ -137,6 +137,14 @@ describe('buildSizingLines (Sizing Estimate plumbing)', () => {
     expect(record.sizing_lines).toEqual(buildSizingLines(RATE_CARD_SEED, baseInputs))
     expect(record.sizing_lines?.length).toBeGreaterThan(0)
   })
+
+  it('buildRecord plumbs usage_rates onto the ProposalRecord from the rate card (item: ₹1/OCR rate missing from proposals)', () => {
+    const draft: ProposalDraft = { ...makeDraft('p1', 'Acme'), inputs: { ...defaultInputs(60), ...baseInputs } }
+    const record = buildRecord(draft, RATE_CARD_SEED)
+    expect(record.usage_rates).toEqual([
+      { label: 'OCR processing (scanned / physical consent capture)', unit: 'per document', unit_price_inr: 1 },
+    ])
+  })
 })
 
 describe('includeBom', () => {

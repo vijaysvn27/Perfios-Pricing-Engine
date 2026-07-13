@@ -42,6 +42,7 @@ function clientSafe(inputs: DealInputs, opts: { discount_shown?: boolean } = {})
     inputs,
     results: [price(RATE_CARD_SEED, inputs)],
     discount_shown: opts.discount_shown ?? true,
+    usage_rates: RATE_CARD_SEED.usage_rates,
   }
 }
 
@@ -53,10 +54,11 @@ function compareClientSafe(inputs: DealInputs, opts: { discount_shown?: boolean 
     inputs,
     results: [all.onprem, all.hybrid, all.saas],
     discount_shown: opts.discount_shown ?? true,
+    usage_rates: RATE_CARD_SEED.usage_rates,
   }
 }
 
-const FORMAT_KINDS = ['module_wise', 'saas_style', 'perfios'] as const
+const FORMAT_KINDS = ['module_wise', 'perfios'] as const
 
 const CASES: Array<{ label: string; proposal: ClientSafeProposal }> = [
   { label: 'onprem', proposal: clientSafe(onpremInputs) },
@@ -129,5 +131,16 @@ describe('buildProposalDocx structure', () => {
   it('builds without a logo (falls back to the text wordmark cover)', () => {
     const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
     expect(() => buildProposalDocx(model, { customer: 'Acme Appliances' })).not.toThrow()
+  })
+
+  it('builds with a logo (running header gets an embedded image ahead of the "Perfios DPDP Suite" text — item 5)', () => {
+    const model = buildFormat('perfios', clientSafe(onpremInputs), FIXED_DATE)
+    // A real (if trivial) 1x1 transparent PNG, so this test exercises the
+    // same code path as a genuine logo asset rather than an arbitrary buffer.
+    const PNG_1X1_BASE64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    const logo = new Uint8Array(Buffer.from(PNG_1X1_BASE64, 'base64')).buffer as ArrayBuffer
+    const doc = buildProposalDocx(model, { customer: 'Acme Appliances', logo })
+    expect(doc).toBeInstanceOf(Document)
   })
 })

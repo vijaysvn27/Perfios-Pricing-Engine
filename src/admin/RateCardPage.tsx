@@ -8,6 +8,7 @@ import type { UpdateCard } from './rateCard/helpers'
 import OnPremCmGroup from './rateCard/OnPremCmGroup'
 import PublishBar from './rateCard/PublishBar'
 import SaasCmGroup from './rateCard/SaasCmGroup'
+import UsageRatesGroup from './rateCard/UsageRatesGroup'
 import WorkedExample from './rateCard/WorkedExample'
 
 interface Props {
@@ -131,6 +132,7 @@ export default function RateCardPage({ instanceId }: Props) {
         <OnPremCmGroup cm={draft.onprem_cm} update={update} />
         <SaasCmGroup saas={draft.saas_cm} fullCard={draft} update={update} />
         <EstateGroup estate={draft.estate} update={update} />
+        <UsageRatesGroup usageRates={draft.usage_rates} update={update} />
         <ExplainerCard />
       </div>
 

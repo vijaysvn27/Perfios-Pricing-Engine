@@ -28,6 +28,19 @@ export interface SizingLine {
   annual_inr: number
 }
 
+/**
+ * A published, billed-on-actuals usage rate (e.g. OCR processing at
+ * ₹1/document) — the rate card's `usage_rates`, carried onto the proposal so
+ * formats can render a "Usage-Based Items" table (owner complaint: the
+ * ₹1/OCR rate was missing from every proposal). Client-safe by design —
+ * this is a published rate card, not internal pricing strategy.
+ */
+export interface UsageRateLine {
+  label: string
+  unit: string
+  unit_price_inr: number
+}
+
 /** Full internal record: what the AM sees and what we persist. */
 export interface ProposalRecord {
   id: string
@@ -41,6 +54,9 @@ export interface ProposalRecord {
   /** Optional: computed by wizardLogic.buildRecord (has the rate card in
    * scope); absent for records built without a rate card in hand. */
   sizing_lines?: SizingLine[]
+  /** Optional: populated by wizardLogic.buildRecord from the rate card's
+   * usage_rates (e.g. OCR). Absent for records built without a rate card. */
+  usage_rates?: UsageRateLine[]
 }
 
 /** What client render paths receive. No channel, no internal notes — by construction. */
@@ -51,6 +67,7 @@ export interface ClientSafeProposal {
   results: ModeResult[]
   discount_shown: boolean
   sizing_lines?: SizingLine[]
+  usage_rates?: UsageRateLine[]
 }
 
 export function toClientSafe(p: ProposalRecord): ClientSafeProposal {
@@ -61,6 +78,7 @@ export function toClientSafe(p: ProposalRecord): ClientSafeProposal {
     results: p.results,
     discount_shown: p.discount_shown,
     sizing_lines: p.sizing_lines,
+    usage_rates: p.usage_rates,
   }
 }
 

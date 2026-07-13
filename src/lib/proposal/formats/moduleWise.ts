@@ -20,6 +20,16 @@ function scopeNote(p: ClientSafeProposal, key: 'dspm' | 'dam' | 'endpoint'): str
   return inScope ? 'In current scope.' : 'Not in current scope — available as an add-on.'
 }
 
+/** DPIA can only run fully automated when DSPM or DAM feeds it discovery
+ * data (owner feedback: "DPIA cannot be delivered standalone in CM-only
+ * deals") — mirrors inclusions.ts's dpiaAutomated rule. */
+function dpiaNote(p: ClientSafeProposal): string {
+  const automated = p.inputs.deployment_mode !== 'saas' && (p.inputs.modules.dspm || p.inputs.modules.dam)
+  return automated
+    ? 'Bundled — DPIA delivered in full (DSPM/DAM discovery feeds the assessment).'
+    : 'Bundled — questionnaire-based DPIA only; full automated DPIA requires DSPM/DAM in scope.'
+}
+
 /**
  * "Where Each Capability Is Priced" — answers the module-based pricing
  * question an AM gets from clients ("what does ROPA/DPAR cost?"): every named
@@ -37,7 +47,7 @@ function buildAttributionSection(p: ClientSafeProposal): RenderSection {
     ['Consent Governance (Consent Bridge)', 'Consent Manager', 'Bundled.'],
     ['Consent Breach Module', 'Consent Manager', 'Bundled.'],
     ['Vendor / Third-Party Module', 'Consent Manager', 'Bundled.'],
-    ['Data Privacy Risk Assessment (DPIA)', 'Consent Manager', 'Bundled.'],
+    ['Data Privacy Risk Assessment (DPIA)', 'Consent Manager', dpiaNote(p)],
     ['Data lineage & automated RoPA', 'DSPM / DAM', 'Delivered with those modules; no standalone charge.'],
     ['DSPM (discovery & classification)', 'Priced line — per-unit estate rates', scopeNote(p, 'dspm')],
     ['DAM (database activity monitoring)', 'Priced line — per-unit estate rates', scopeNote(p, 'dam')],

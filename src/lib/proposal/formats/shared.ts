@@ -1,14 +1,14 @@
-// Shared copy and helpers used by every format builder (moduleWise, saasStyle,
-// perfios). Keeping the CM module copy and the discount-row logic in one
-// place means the three formats can never drift on wording or on how a
-// discount is (or isn't) shown to the client (D4 in the design doc).
+// Shared copy and helpers used by every format builder (moduleWise, perfios).
+// Keeping the CM module copy and the discount-row logic in one place means
+// the two formats can never drift on wording or on how a discount is (or
+// isn't) shown to the client (D4 in the design doc).
 import type { ComponentLine, ModeResult, TraceStep } from '../../engine2/types'
 import { formatINR } from '../../format'
 import type { ClientSafeProposal } from '../clientSafe'
 
 /** The 7 Consent Manager modules — verbatim copy, used everywhere "What You
- * Get" appears (module-wise implicitly via the CM line label, saas-style,
- * and perfios section 1). */
+ * Get" appears (module-wise implicitly via the CM line label, and perfios
+ * section 1). */
 export const CM_MODULES_COPY: string[] = [
   '1. Consent Notice & Templates — DPDP notice, 22 languages, omnichannel, audio readout, self & nomination',
   '2. Data Principal Rights Portal (DPAR) — access, update, revoke, nomination with KYC, grievance',
@@ -16,7 +16,8 @@ export const CM_MODULES_COPY: string[] = [
   '4. Consent Governance (Consent Bridge) — DPO dashboards, audit logs, versioning, maker-checker, rule engine, RBAC, auto-renewal, bulk, OCR',
   '5. Consent Breach Module — breach detection, consent-to-data tie-back, DSAR tie-back',
   '6. Vendor / Third-Party Module — automated API calls to processors, vendor reporting',
-  '7. Data Privacy Risk Assessment (DPIA) — DPIA with risk scoring and versioning',
+  '7. Data Privacy Risk Assessment (DPIA) — DPIA with risk scoring and versioning — delivered in full when ' +
+    'DSPM/DAM are in scope (automated discovery feeds the assessment)',
 ]
 
 export const CM_MODULES_CLOSING_LINE = 'Unlimited consents and actions per data principal.'
@@ -43,49 +44,54 @@ export function traceFormula(trace: TraceStep[], label: string): string | undefi
 }
 
 /**
- * Per-user rate, formatted for client copy: "₹1.55 per user per year".
- * `saas_per_user_rate` is unrounded internally (ModeResult.saas_per_user_rate);
- * this is the one place that rounds it for display.
+ * Per-user (per-DP) overage rate, formatted for client copy: "₹2". The
+ * engine derives this as a whole-rupee figure (ceil(platform ÷ tier
+ * capacity) — see ModeResult.saas_per_user_rate / engine2.ts's
+ * priceCmSaas), so this is a plain INR render, not a 2-decimal one.
  */
 export function formatPerUserRate(rate: number): string {
-  return `₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatINR(rate)
 }
 
 /**
  * "Included DPs + overage" framing (Honda pattern): the Year-1 platform fee
- * includes the committed data-principal base; data principals beyond that
- * are charged at the derived per-user rate, billed on actuals. Only
- * meaningful for SaaS/Hybrid (on-prem has no per-user rate) — returns
- * undefined when `saas_per_user_rate` is absent so callers can omit the note
- * entirely rather than render a broken sentence. The leading "Included:"
- * prefix is intentional: excelExport.ts detects it to apply the green
- * callout fill (mirrors Honda's INCLUDED CONSENTS callout).
+ * includes the tier's bundled data-principal count; data principals beyond
+ * that bundle are charged at the derived per-DP rate, billed on actuals.
+ * Reads `ModeResult.saas_included_dp` / `saas_per_user_rate` — NOT
+ * `inputs.dp_base_y1` (the committed base, a different number from the
+ * bundle) — so this always names the actual bundle the platform fee
+ * carries. Only meaningful for SaaS/Hybrid (on-prem has neither field) —
+ * returns undefined so callers can omit the note entirely rather than
+ * render a broken sentence. The leading "Included:" prefix is intentional:
+ * excelExport.ts detects it to apply the green callout fill (mirrors
+ * Honda's INCLUDED CONSENTS callout).
  */
 export function includedDpNote(p: ClientSafeProposal): string | undefined {
-  const rate = p.results[0]?.saas_per_user_rate
-  if (rate === undefined) return undefined
-  const committed = p.inputs.dp_base_y1.toLocaleString('en-IN')
+  const result = p.results[0]
+  const rate = result?.saas_per_user_rate
+  const included = result?.saas_included_dp
+  if (rate === undefined || included === undefined) return undefined
   return (
-    `Included: ${committed} data principals in the Year-1 platform fee. ` +
-    `Additional data principals beyond the included base are charged at ${formatPerUserRate(rate)} ` +
-    `per data principal per year, billed on actuals.`
+    `Included: ${included.toLocaleString('en-IN')} data principals in the Year-1 platform fee. ` +
+    `Data principals beyond the bundle are charged at ${formatPerUserRate(rate)} per data principal per year, ` +
+    `billed on actuals.`
   )
 }
 
 /**
- * Year-2+ rule sentence for the SaaS/hybrid per-user model (2026-07-07
- * methodology, superseding the old per-tier overage note): the greater of
- * the Year-2 floor percentage of the Year-1 platform fee, or actual users
- * × the same per-user rate. Reads the floor percentage out of the trace
- * (the `Year 2+ (with N% floor)` step engine2 always pushes for saas/hybrid)
- * so this stays consistent with whatever the rate card currently publishes;
- * falls back to 30% — the seeded default — if that step is absent (e.g. an
- * on-prem result, which has no Year-2+ floor concept).
+ * Year-2+ rule sentence for the SaaS/hybrid model: the Year-1 platform fee
+ * recurs every year as the committed base, and data principals beyond the
+ * bundle are billed Year over year at the same per-DP rate (engine2.ts's
+ * priceCmSaas: `recurring = max(floor, platform + y2Overage)` — the floor
+ * guard is retained defensively but cannot bind once the platform fee
+ * recurs, since platform alone always exceeds the floor percentage of
+ * itself).
  */
-export function year2RuleNote(trace: TraceStep[]): string {
-  const step = trace.find((s) => /^Year 2\+ \(with .+ floor\)$/.test(s.label))
-  const pct = step?.label.match(/([\d.]+)%/)?.[1] ?? '30'
-  return `From Year 2 onward, your annual fee is the greater of ${pct}% of the Year-1 platform fee, or your actual user count × the same per-user rate.`
+export function year2RuleNote(_trace: TraceStep[]): string {
+  return (
+    'From Year 2 onward, your annual fee is the Year-1 platform fee (it recurs as your committed base) plus any ' +
+    'data principals beyond the included bundle, billed at the same per-DP rate.'
+  )
 }
 
 /** Client caveat required alongside every SaaS/hybrid per-user quote (Vi
@@ -104,7 +110,7 @@ export function findLine(result: ModeResult, key: ComponentLine['component_key']
  * Discount rows for a totals line (D4): list/discount/net when the discount
  * is shown; net-only when it's hidden; a single undiscounted row when there
  * is no discount. `tco` is optional — omit it for tables that only show
- * per-year figures (e.g. the SaaS-style "Annual Cost" table).
+ * per-year figures.
  */
 export function discountTotalRows(opts: {
   label: string

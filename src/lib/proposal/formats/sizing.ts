@@ -11,7 +11,7 @@ import type { ClientSafeProposal } from '../clientSafe'
 import { BOM_NOTES, bomForDpBase } from '../bomData'
 import type { BomRow } from '../bomData'
 import type { DeploymentMode, ModeResult, TraceStep } from '../../engine2/types'
-import { findLine, formatPerUserRate, includedDpNote, year2RuleNote } from './shared'
+import { findLine, formatINR, formatPerUserRate, traceValue, year2RuleNote } from './shared'
 import type { RenderSection, RenderTable } from './types'
 
 // The consent governance bridge sits on the client's premises in EVERY
@@ -46,9 +46,8 @@ function estateConsideredTable(p: ClientSafeProposal): RenderTable | undefined {
 }
 
 /** Extracts the matched SaaS/Hybrid tier label out of the trace's "SaaS
- * tier" step (engine2 always pushes this for saas/hybrid pricing), the same
- * way shared.ts's year2RuleNote reads its floor percentage out of the trace
- * rather than re-deriving it. */
+ * tier" step (engine2 always pushes this for saas/hybrid pricing) rather
+ * than re-deriving it. */
 function tierLabel(trace: TraceStep[]): string | undefined {
   const step = trace.find((s) => s.label === 'SaaS tier')
   return step?.formula.match(/→ tier (.+?) \(/)?.[1]
@@ -57,12 +56,22 @@ function tierLabel(trace: TraceStep[]): string | undefined {
 function platformSizingParagraphs(p: ClientSafeProposal, result: ModeResult): string[] {
   const tier = tierLabel(result.trace)
   const perUserRate = result.saas_per_user_rate
-  const includedNote = includedDpNote(p)
+  const included = result.saas_included_dp
+  const dpY1 = p.inputs.dp_base_y1
+  const y1Overage = traceValue(result.trace, 'Year 1 overage')
   const paragraphs = [
-    `Committed base: ${p.inputs.dp_base_y1.toLocaleString('en-IN')} data principals${tier ? ` (${tier} tier)` : ''}`,
+    `Your Year-1 base: ${dpY1.toLocaleString('en-IN')} data principals${tier ? ` (${tier} tier)` : ''}`,
+    ...(included !== undefined
+      ? [`Included DP bundle: ${included.toLocaleString('en-IN')} data principals in the Year-1 platform fee.`]
+      : []),
     hostingFootprint(p.inputs.deployment_mode),
-    ...(includedNote ? [includedNote] : []),
     ...(perUserRate !== undefined ? [`Per-user rate: ${formatPerUserRate(perUserRate)} per user per year`] : []),
+    ...(y1Overage !== undefined && y1Overage > 0 && included !== undefined && perUserRate !== undefined
+      ? [
+          `Year-1 overage: ${(dpY1 - included).toLocaleString('en-IN')} data principals beyond the bundle × ` +
+            `${formatPerUserRate(perUserRate)} = ${formatINR(y1Overage)}.`,
+        ]
+      : []),
     year2RuleNote(result.trace),
   ]
   if (p.inputs.deployment_mode === 'hybrid') {

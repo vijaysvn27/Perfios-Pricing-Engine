@@ -165,6 +165,7 @@ export function buildRecord(draft: ProposalDraft, card: RateCard): ProposalRecor
     results,
     discount_shown: draft.discount_shown,
     sizing_lines: buildSizingLines(card, draft.inputs),
+    usage_rates: card.usage_rates.map((u) => ({ label: u.label, unit: u.unit, unit_price_inr: u.unit_price_inr })),
   }
 }
 

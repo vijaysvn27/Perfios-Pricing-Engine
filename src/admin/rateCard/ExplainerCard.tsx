@@ -21,13 +21,15 @@ export default function ExplainerCard() {
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">SaaS / Hybrid</h3>
           <p className="mt-1">
-            The committed user base picks a tier, whose monthly hosting cost converts to an annual INR figure via FX
-            and the SG&amp;A uplift, and adds to the SaaS licence to form the platform fee. Year 1 is the platform fee
-            plus a one-time implementation charge on the licence. The platform fee divided by the committed base gives
-            a per-user rate; Year 2+ is the greater of the Year-2 floor percentage of the Year-1 platform fee, or your
-            actual user count in that year times the same per-user rate — so pricing follows usage in both directions
-            (2026-07-07 per-user methodology; the old per-tier overage rate is retained for history only and is no
-            longer read).
+            The DP base picks a tier, whose monthly hosting cost converts to an annual INR figure via FX and the
+            SG&amp;A uplift, and adds to the SaaS licence to form the platform fee. Each tier bundles a set number of
+            data principals into that platform fee (&quot;Included DPs&quot;); DPs beyond the bundle are overage,
+            billed at ceil(platform fee ÷ tier cap) — whole rupees per DP. Year 1 is the platform fee plus a one-time
+            implementation charge on the licence, plus Year-1 overage on any DPs beyond the bundle. The platform fee
+            recurs every year (it carries the bundle); Year 2+ is the greater of the Year-2 floor percentage of the
+            Year-1 platform fee, or the platform fee plus overage on your actual Year-2 DP count beyond the bundle
+            (2026-07-13 bundled-DP model, owner direction; the old per-tier overage rate column is retained for
+            history only and is no longer read).
           </p>
         </div>
         <div>

@@ -18,6 +18,13 @@ export interface SaasTier {
   tier_key: string
   label: string
   user_cap: number
+  /**
+   * Data principals bundled into the platform fee (owner direction
+   * 2026-07-13: "if it is Upto 5L DP, we include 3L in the bundle. Rest can
+   * be overage"). The per-DP rate = platform ÷ included_dp; DPs beyond the
+   * bundle are overage from Year 1. Must satisfy 0 < included_dp <= user_cap.
+   */
+  included_dp: number
   /** Consentick Summary "On-Prem Total ($/mo)" column. */
   infra_usd_mo_onprem_ref: number
   /** Consentick Summary "SaaS v3 ($/mo)" column. */
@@ -40,6 +47,18 @@ export interface EstateRate {
   bucket: EstateBucket
 }
 
+/**
+ * A usage-based rate billed on actuals, OUTSIDE the TCO (Honda "Usage-based
+ * Items" pattern) — e.g. OCR processing at ₹1/document. The engine does not
+ * total these (no committed volume); proposals list them as a rate card.
+ */
+export interface UsageRate {
+  rate_key: string
+  label: string
+  unit: string
+  unit_price_inr: number
+}
+
 export interface RateCard {
   onprem_cm: {
     slabs: OnPremSlab[] // ascending dp_cap; last slab is the catch-all
@@ -60,6 +79,8 @@ export interface RateCard {
     deployment_pct: number // one-time, of base
     amc_pct: number // annual, of base, on top of the recurring base
   }
+  /** Billed on actuals, outside the TCO (e.g. OCR ₹1/document). */
+  usage_rates: UsageRate[]
 }
 
 export interface DealInputs {
@@ -113,11 +134,13 @@ export interface ModeResult {
   net_total_tco_inr: number // == total when discount_pct = 0
   net_total_year1_inr: number
   /**
-   * (licence + infra) ÷ committed users (dp_base_y1), unrounded. Set for
-   * saas/hybrid (per-user 2026-07-07 methodology); undefined for onprem,
-   * which has no per-user concept. Exposed here so formats can render it
-   * without re-deriving from the trace.
+   * (licence + infra) ÷ included_dp (the tier's bundled data principals),
+   * unrounded. Set for saas/hybrid (bundled-DP model, owner direction
+   * 2026-07-13, refining the 2026-07-07 per-user methodology); undefined for
+   * onprem. Exposed so formats render it without re-deriving from the trace.
    */
   saas_per_user_rate?: number
+  /** The tier's bundled DP count used above; undefined for onprem. */
+  saas_included_dp?: number
   trace: TraceStep[]
 }

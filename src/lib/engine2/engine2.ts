@@ -18,8 +18,10 @@ interface CmPrice {
   one_time: number
   year1: number
   recurring: number
-  /** (licence + infra) ÷ committed users, unrounded. Only set for saas/hybrid CM. */
+  /** platform ÷ included_dp, unrounded. Only set for saas/hybrid CM. */
   per_user_rate?: number
+  /** The tier's bundled DP count. Only set for saas/hybrid CM. */
+  included_dp?: number
 }
 
 function pickByCap<T>(items: T[], cap: (t: T) => number, value: number): T {
@@ -43,13 +45,14 @@ function priceCmOnPrem(card: RateCard, base: number, trace: TraceStep[]): CmPric
 }
 
 /**
- * SaaS / Hybrid CM (2026-07-07 per-user methodology, decided on the Vi -
- * Documentation leadership call — see docs/superpowers/specs/2026-07-12-
- * proposal-builder-revamp-design.md §6 amendment). The old per-tier
- * `overage_inr_per_user` column is superseded and is no longer read here:
- * Year 2+ now follows the committed-base-derived per-user rate in both
- * directions (more users → more billed; fewer users → less, floored at
- * y2_floor_pct of the Year-1 platform fee).
+ * SaaS / Hybrid CM — bundled-DP model (owner direction 2026-07-13, refining
+ * the 2026-07-07 per-user methodology from the Vi leadership call; see the
+ * design-doc §6 amendments). The tier's platform fee INCLUDES a bundled DP
+ * count (`included_dp`, e.g. 3L bundled in the up-to-5L tier); the per-DP
+ * rate = platform ÷ included_dp, and data principals beyond the bundle are
+ * overage at that rate from Year 1. Year 2+ = greater of the y2_floor_pct
+ * floor or actual users × rate (usage-following in both directions). The
+ * legacy per-tier `overage_inr_per_user` column is superseded and not read.
  */
 function priceCmSaas(card: RateCard, baseY1: number, baseY2: number, trace: TraceStep[]): CmPrice {
   const s = card.saas_cm
@@ -59,21 +62,31 @@ function priceCmSaas(card: RateCard, baseY1: number, baseY2: number, trace: Trac
   const licence = s.annual_licence_inr
   const impl = r(licence * s.implementation_pct)
   const platform = licence + infra
-  // Kept unrounded internally (display layers round to 2dp for "₹X.XX/user/year").
-  const perUserRate = baseY1 > 0 ? platform / baseY1 : 0
-  const usage = r(baseY2 * perUserRate)
+  const included = tier.included_dp
+  // Overage ₹/DP = ceil(platform ÷ tier capacity) — the historical rule
+  // (owner 2026-07-13: the old ₹7 was a round-up of ₹6.22 at the $1,347
+  // on-prem basis; ceil(platform/cap) reproduces the legacy 7/4/3/2/2 column
+  // exactly at that basis). At the SaaS basis it yields the lower SaaS rates.
+  const perUserRate = tier.user_cap > 0 ? Math.ceil(platform / tier.user_cap) : 0
+  const y1Overage = Math.max(0, baseY1 - included) * perUserRate
+  // The platform fee is the annual commitment (it carries the bundle);
+  // Year 2+ adds overage on actual DPs beyond the bundle. The floor is kept
+  // as a guard but cannot bind while the platform fee recurs.
+  const y2Overage = Math.max(0, baseY2 - included) * perUserRate
   const floor = r(s.y2_floor_pct * platform)
-  const recurring = Math.max(floor, usage)
+  const recurring = Math.max(floor, platform + y2Overage)
   trace.push(
-    { label: 'SaaS tier', formula: `committed base ${inr(baseY1)} ≤ ${tier.label} cap ${inr(tier.user_cap)} → tier ${tier.label} (${s.infra_basis})`, result: usdMo },
+    { label: 'SaaS tier', formula: `DP base ${inr(baseY1)} ≤ ${tier.label} cap ${inr(tier.user_cap)} → tier ${tier.label} (${s.infra_basis})`, result: usdMo },
     { label: 'Hosting infra (annual)', formula: `$${usdMo}/mo × 12 × ₹${s.fx_inr_per_usd}/USD × (1 + ${s.sgna_uplift_pct * 100}% SG&A)`, result: infra },
     { label: 'Platform fee (annual)', formula: `licence ₹${inr(licence)} + infra ₹${inr(infra)}`, result: platform },
     { label: 'Implementation (one-time)', formula: `${s.implementation_pct * 100}% × licence ₹${inr(licence)}`, result: impl },
-    { label: 'Per-user rate', formula: `(licence ₹${inr(licence)} + infra ₹${inr(infra)}) ÷ ${inr(baseY1)} committed users = ₹${perUserRate.toFixed(2)}/user/year`, result: perUserRate },
-    { label: 'Year 2+ usage', formula: `${inr(baseY2)} users × ₹${perUserRate.toFixed(2)}/user`, result: usage },
-    { label: `Year 2+ (with ${s.y2_floor_pct * 100}% floor)`, formula: `max(${s.y2_floor_pct * 100}% × platform ₹${inr(platform)} = ₹${inr(floor)}, usage ₹${inr(usage)})`, result: recurring },
+    { label: 'Included DP bundle', formula: `${tier.label} tier bundles ${inr(included)} data principals in the platform fee`, result: included },
+    { label: 'Overage rate', formula: `platform ₹${inr(platform)} ÷ ${inr(tier.user_cap)} tier capacity = ₹${(platform / tier.user_cap).toFixed(2)} → ₹${inr(perUserRate)}/DP/year (rounded up)`, result: perUserRate },
+    { label: 'Year 1 overage', formula: `max(0, ${inr(baseY1)} − ${inr(included)}) DPs × ₹${inr(perUserRate)}/DP`, result: y1Overage },
+    { label: 'Year 2+ overage', formula: `max(0, ${inr(baseY2)} − ${inr(included)}) DPs × ₹${inr(perUserRate)}/DP`, result: y2Overage },
+    { label: `Year 2+ (platform + overage, ${s.y2_floor_pct * 100}% floor guard)`, formula: `max(₹${inr(floor)}, platform ₹${inr(platform)} + overage ₹${inr(y2Overage)})`, result: recurring },
   )
-  return { one_time: impl, year1: impl + platform, recurring, per_user_rate: perUserRate }
+  return { one_time: impl, year1: impl + platform + y1Overage, recurring, per_user_rate: perUserRate, included_dp: included }
 }
 
 interface EstateBases {
@@ -221,6 +234,7 @@ export function price(card: RateCard, inputs: DealInputs): ModeResult {
     net_total_tco_inr,
     net_total_year1_inr,
     saas_per_user_rate: cm.per_user_rate,
+    saas_included_dp: cm.included_dp,
     trace,
   }
 }

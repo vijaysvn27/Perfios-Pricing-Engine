@@ -450,3 +450,22 @@ Each stage lands with tests and is independently shippable.
 - If SaaS list prices must ever move to the SaaS v3 basis, D1 makes it a
   one-click, versioned, rollback-able change — but it is a commercial call,
   not a technical one.
+
+### Amendment (2026-07-13, evening): bundled-DP SaaS model, final
+
+Owner-decoded historical rule: the legacy overage column (7/4/3/2/2) was
+ceil(platform / tier user_cap) at the on-prem $ basis (Tier-0: 31.1L / 5L =
+6.22 -> 7). The engine now implements exactly that rule at the active basis:
+
+- Each tier bundles `included_dp` data principals into the platform fee
+  (Tier-0 = 3,00,000, owner-anchored; other tiers seeded at 60% of cap,
+  PROVISIONAL, admin-tunable).
+- Overage rate (whole INR) = ceil(platform / user_cap). At saas_v3 basis:
+  5 / 3 / 2 / 2 / 1.
+- Year 1 = implementation + platform + max(0, dp_y1 - included) x rate.
+- Year 2+ = platform + max(0, dp_y2 - included) x rate (platform recurs as
+  the commitment; the 30% floor remains as a non-binding guard).
+- A regression test pins that the rule reproduces [7,4,3,2,2] at onprem_ref.
+- usage_rates group added (OCR Rs.1/document), billed on actuals, outside TCO.
+- Formats reduced to two: Perfios (mode-adaptive, subscription table for
+  SaaS/Hybrid) and Module-wise. DPIA is dependent on DSPM/DAM in CM-only deals.

@@ -37,36 +37,36 @@ describe('On-Prem CM (Excel parity: Calculator D61–D65)', () => {
   })
 })
 
-describe('SaaS CM (2026-07-13: default basis saas_v3, owner direction; committed 25L tier: infra 23,66,496, platform 38,66,496, per-user rate 1.5465984)', () => {
-  it('25L committed, no growth: Y1 40,91,496 / Y2+ 38,66,496', () => {
+describe('SaaS CM (bundled-DP model, 2026-07-13 owner direction, corrected: overage rate = ceil(platform ÷ tier user_cap), whole rupees; the platform fee recurs every year and carries the bundle. Committed 25L tier: platform 38,66,496, cap 25,00,000, rate ceil(1.5465984)=₹2/DP, included 15,00,000)', () => {
+  it('25L tier, growth beyond the bundle (dp 25L both years): Year-1 overage 10,00,000 × ₹2 = 20,00,000 → Y1 60,91,496 / Y2+ (platform + overage) 58,66,496 / 3yr TCO 1,78,24,488', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
     const cm = res.lines[0]
-    // infra = 1980*12*83*1.2 = 23,66,496; platform = 38,66,496
+    expect(cm.one_time_inr).toBe(225_000)
+    expect(cm.year1_inr).toBe(6_091_496)
+    expect(cm.recurring_inr).toBe(5_866_496)
+    expect(cm.tco_inr).toBe(17_824_488)
+    expect(res.saas_per_user_rate).toBe(2)
+    expect(res.saas_included_dp).toBe(1_500_000)
+  })
+
+  it('at the bundle (dp_y1 = dp_y2 = 15L): no overage; Y1 40,91,496; recurring 38,66,496 (= platform exactly)', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 1_500_000, dp_base_y2: 1_500_000 })
+    const cm = res.lines[0]
     expect(cm.year1_inr).toBe(4_091_496)
     expect(cm.recurring_inr).toBe(3_866_496)
-    expect(cm.one_time_inr).toBe(225_000)
-    // 3-yr TCO = 40,91,496 + 2×38,66,496 = 1,18,24,488
-    expect(cm.tco_inr).toBe(11_824_488)
-    expect(res.saas_per_user_rate).toBeCloseTo(1.5465984)
   })
 
-  it('per-user rate at committed usage reproduces the platform fee exactly: round(committed × rate) === platform', () => {
-    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
-    const rate = res.saas_per_user_rate
-    expect(rate).toBeDefined()
-    expect(Math.round(base.dp_base_y1 * (rate as number))).toBe(3_866_496)
-  })
-
-  it('growth: Y2 base 30L over 25L committed bills 30,00,000 users × the per-user rate (replaces the old overage line)', () => {
+  it('growth: Y2 base 30L over the 15L bundle adds (30,00,000 − 15,00,000) × ₹2 on top of the recurring platform fee', () => {
     const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 3_000_000 })
-    // round(30,00,000 × 1.5465984) = 46,39,795
-    expect(res.lines[0].recurring_inr).toBe(4_639_795)
+    // platform 38,66,496 + overage 15,00,000 × 2 = 30,00,000 → 68,66,496
+    expect(res.lines[0].recurring_inr).toBe(6_866_496)
   })
 
-  it('shrink: Y2 base 5L under 25L committed floors at 30% of the Year-1 platform fee (floor finally binds)', () => {
-    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 500_000 })
-    // usage round(5,00,000 × 1.5465984) = 7,73,299 < floor round(0.3 × 38,66,496) = 11,59,949
-    expect(res.lines[0].recurring_inr).toBe(1_159_949)
+  it('shrink: Y2 base 4L under the 15L bundle has zero overage — the platform fee still recurs in full, floor guard does not bind', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y2: 400_000 })
+    const floor = Math.round(0.3 * 3_866_496) // 11,59,949
+    expect(floor).toBeLessThan(3_866_496)
+    expect(res.lines[0].recurring_inr).toBe(3_866_496)
   })
 
   it('Year-2 floor is a lower bound (guard, matches MAX in the engine)', () => {
@@ -74,11 +74,45 @@ describe('SaaS CM (2026-07-13: default basis saas_v3, owner direction; committed
     expect(res.lines[0].recurring_inr).toBeGreaterThanOrEqual(Math.round(0.3 * 3_866_496))
   })
 
-  it('infra basis switch (D1): saas_v3 is now the default; onprem_ref remains available and reprices 25L tier from $1,980 back to $3,671/mo', () => {
+  it('Tier-0 owner anchor: dp 3L (at the bundle) → platform 22,76,880, rate ceil(4.5538)=₹5/DP, Y1 25,01,880 (no overage)', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 300_000, dp_base_y2: 300_000 })
+    const cm = res.lines[0]
+    // infra = 650*12*83*1.2 = 7,76,880; platform = 15,00,000 + 7,76,880 = 22,76,880; cap 5,00,000 → ceil(22,76,880/5,00,000) = ceil(4.5538) = 5
+    expect(res.saas_included_dp).toBe(300_000)
+    expect(res.saas_per_user_rate).toBe(5)
+    expect(cm.year1_inr).toBe(2_501_880)
+  })
+
+  it('Tier-0 at cap (dp 5L, still tier0, bundle still 3L): Year-1 overage 2,00,000 × ₹5 = 10,00,000 → Y1 35,01,880', () => {
+    const res = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas', dp_base_y1: 500_000, dp_base_y2: 500_000 })
+    expect(res.lines[0].year1_inr).toBe(3_501_880)
+  })
+
+  it('legacy reproduction: ceil(platform ÷ tier cap) at the onprem_ref basis reproduces the historical 7/4/3/2/2 overage column exactly, one tier at a time', () => {
     const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: 'onprem_ref' as const } }
-    const res = price(card, { ...base, deployment_mode: 'saas' })
-    // 3671*12*83*1.2 = 43,87,579.2 → 43,87,579; platform = 58,87,579; Y1 = +2,25,000
+    // Hand-verified platforms (licence 15,00,000 + round(usd_mo × 12 × 83 × 1.2)):
+    // tier0 31,09,934; 10l 33,51,365; 25l 58,87,579; 50l 69,23,818; 100l 1,05,15,394
+    const expectedRate = [7, 4, 3, 2, 2]
+    RATE_CARD_SEED.saas_cm.tiers.forEach((tier, i) => {
+      const res = price(card, { ...base, deployment_mode: 'saas', dp_base_y1: tier.user_cap, dp_base_y2: tier.user_cap })
+      expect(res.saas_per_user_rate).toBe(expectedRate[i])
+    })
+  })
+
+  it('infra basis switch (D1): onprem_ref reprices the 25L tier from $1,980 to $3,671/mo; at the bundle preserves the historical Y1', () => {
+    const card = { ...RATE_CARD_SEED, saas_cm: { ...RATE_CARD_SEED.saas_cm, infra_basis: 'onprem_ref' as const } }
+    const res = price(card, { ...base, deployment_mode: 'saas', dp_base_y1: 1_500_000, dp_base_y2: 1_500_000 })
+    // 3671*12*83*1.2 = 43,87,579.2 → 43,87,579; platform = 58,87,579; at the bundle, no overage → Y1 = 61,12,579
     expect(res.lines[0].year1_inr).toBe(6_112_579)
+  })
+
+  it('trace includes the bundle/overage steps for saas, never for onprem', () => {
+    const saasRes = price(RATE_CARD_SEED, { ...base, deployment_mode: 'saas' })
+    const onpremRes = price(RATE_CARD_SEED, base)
+    for (const label of ['Included DP bundle', 'Overage rate', 'Year 1 overage']) {
+      expect(saasRes.trace.some((s) => s.label === label)).toBe(true)
+      expect(onpremRes.trace.some((s) => s.label === label)).toBe(false)
+    }
   })
 })
 
@@ -129,7 +163,8 @@ describe('Estate modules (Excel parity: Calculator D79–D92)', () => {
 
   it('Hybrid: CM priced as SaaS, estate still available', () => {
     const res = price(RATE_CARD_SEED, { ...estateInputs, deployment_mode: 'hybrid' })
-    expect(res.lines[0].year1_inr).toBe(4_091_496)
+    // estateInputs carries base's dp 25L both years → same bundled-model Y1 as the SaaS 25L growth case
+    expect(res.lines[0].year1_inr).toBe(6_091_496)
     expect(res.lines[1].year1_inr).toBe(5_200_000)
   })
 })
@@ -199,8 +234,11 @@ describe('totals, discount, compare, trace', () => {
   it('priceAllModes reproduces Model Comparison D27/E27/F27 (3yr TCO)', () => {
     const all = priceAllModes(RATE_CARD_SEED, base)
     expect(all.onprem.total_tco_inr).toBe(6_240_000)
-    expect(all.hybrid.total_tco_inr).toBe(11_824_488)
-    expect(all.saas.total_tco_inr).toBe(11_824_488)
+    // base carries dp 25L both years — beyond the 15L bundle, so hybrid/saas TCO
+    // include Year-1/Year-2+ overage on top of the recurring platform fee
+    // (bundled-DP model, 2026-07-13 owner direction, corrected overage rate)
+    expect(all.hybrid.total_tco_inr).toBe(17_824_488)
+    expect(all.saas.total_tco_inr).toBe(17_824_488)
   })
 
   it('every published number has a trace path; determinism holds', () => {

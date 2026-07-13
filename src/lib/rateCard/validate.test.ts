@@ -30,4 +30,45 @@ describe('validateRateCard', () => {
     expect(errors.some((e) => e.message.includes('duplicate'))).toBe(true)
     expect(errors.some((e) => e.path === 'saas_cm.fx_inr_per_usd')).toBe(true)
   })
+
+  it('rejects a tier with included_dp <= 0', () => {
+    const c = clone()
+    c.saas_cm.tiers[0].included_dp = 0
+    const errors = validateRateCard(c)
+    expect(errors.some((e) => e.path === 'saas_cm.tiers[0].included_dp')).toBe(true)
+  })
+
+  it('rejects a tier with included_dp above its user_cap', () => {
+    const c = clone()
+    c.saas_cm.tiers[0].included_dp = c.saas_cm.tiers[0].user_cap + 1
+    const errors = validateRateCard(c)
+    expect(errors.some((e) => e.path === 'saas_cm.tiers[0].included_dp')).toBe(true)
+  })
+
+  it('accepts included_dp exactly at the user cap', () => {
+    const c = clone()
+    c.saas_cm.tiers[0].included_dp = c.saas_cm.tiers[0].user_cap
+    expect(validateRateCard(c).some((e) => e.path === 'saas_cm.tiers[0].included_dp')).toBe(false)
+  })
+
+  it('rejects a usage rate with a negative unit price', () => {
+    const c = clone()
+    c.usage_rates[0].unit_price_inr = -1
+    const errors = validateRateCard(c)
+    expect(errors.some((e) => e.path === 'usage_rates[0].unit_price_inr')).toBe(true)
+  })
+
+  it('rejects a usage rate with an empty label', () => {
+    const c = clone()
+    c.usage_rates[0].label = '   '
+    const errors = validateRateCard(c)
+    expect(errors.some((e) => e.path === 'usage_rates[0].label')).toBe(true)
+  })
+
+  it('rejects duplicate usage_rate keys', () => {
+    const c = clone()
+    c.usage_rates = [...c.usage_rates, { ...c.usage_rates[0] }]
+    const errors = validateRateCard(c)
+    expect(errors.some((e) => e.path === 'usage_rates[1].rate_key' && e.message.includes('duplicate'))).toBe(true)
+  })
 })

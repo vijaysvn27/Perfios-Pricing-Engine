@@ -107,14 +107,37 @@ function thinTableBorders(outerColor: string, innerColor: string) {
 // Running header / footer (every page except the cover — titlePage:true on
 // the section properties means page 1 gets no header/footer at all).
 // ---------------------------------------------------------------------------
-function buildRunningHeader(customer: string, title: string): Header {
+// Running-header logo (item 5: "logo missing from the Word running header /
+// header-footer quality") — small, ~0.28in tall, aspect-preserved from the
+// same 900x619 source PNG the cover uses: 0.28in @ 96dpi = 26.88px ≈ 27px
+// tall; 0.28in x (900/619) ≈ 0.407in wide = 0.407in @ 96dpi ≈ 39.08px ≈ 39px.
+const HEADER_LOGO_HEIGHT_PX = 27
+const HEADER_LOGO_WIDTH_PX = 39
+
+function buildRunningHeader(customer: string, title: string, logo?: ArrayBuffer): Header {
+  const leading: (ImageRun | TextRun)[] = []
+  if (logo) {
+    leading.push(
+      new ImageRun({
+        data: logo,
+        type: 'png',
+        transformation: { width: HEADER_LOGO_WIDTH_PX, height: HEADER_LOGO_HEIGHT_PX },
+      }),
+    )
+  }
   return new Header({
     children: [
       new Paragraph({
         tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
         border: { bottom: { style: BorderStyle.SINGLE, size: eighths(0.5), color: COLOR.hairline } },
         children: [
-          new TextRun({ text: `Perfios DPDP Suite · ${customer}`, font: FONT, size: hp(7.5), color: COLOR.meta }),
+          ...leading,
+          new TextRun({
+            text: `${logo ? ' ' : ''}Perfios DPDP Suite · ${customer}`,
+            font: FONT,
+            size: hp(7.5),
+            color: COLOR.meta,
+          }),
           new TextRun({ text: '\t', font: FONT, size: hp(7.5), color: COLOR.meta }),
           new TextRun({ text: title, font: FONT, size: hp(7.5), color: COLOR.meta }),
         ],
@@ -511,7 +534,7 @@ export function buildProposalDocx(model: ProposalRenderModel, opts: WordExportOp
           },
           titlePage: true,
         },
-        headers: { default: buildRunningHeader(opts.customer, model.title) },
+        headers: { default: buildRunningHeader(opts.customer, model.title, opts.logo) },
         footers: { default: buildRunningFooter(opts.customer) },
         children,
       },
