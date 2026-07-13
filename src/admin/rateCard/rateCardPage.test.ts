@@ -217,7 +217,7 @@ describe('pctToInput / inputToPct (percent-input boundary conversion)', () => {
   })
 
   it('18 -> 0.18 -> 18 round-trips exactly (owner example)', () => {
-    expect(inputToPct(pctToInput(inputToPct(18)))).toBe(18)
+    expect(inputToPct(18)).toBe(0.18)
     expect(pctToInput(inputToPct(18))).toBe(18)
   })
 })
