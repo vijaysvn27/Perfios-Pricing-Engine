@@ -54,18 +54,23 @@ describe('buildNarrative', () => {
     expect(onprem.executive_summary).not.toBe(saas.executive_summary)
   })
 
-  it('selected modules appear in the solution overview; unselected ones do not', () => {
+  // The standing DPIA-dependency sentence legitimately names DSPM/DAM in every
+  // overview ("Automated DPIA activates fully when DSPM/DAM are in scope") —
+  // so these tests target each module's PITCH sentence, which must appear only
+  // when the module is selected and the mode allows estate.
+  it('selected modules get their pitch sentence in the solution overview; unselected ones do not', () => {
     const n = buildNarrative(clientSafe('Acme', withDspm))
-    expect(n.solution_overview).toMatch(/DSPM/)
-    expect(n.solution_overview).not.toMatch(/\bDAM\b/)
-    expect(n.solution_overview).not.toMatch(/Endpoint Discovery/)
+    expect(n.solution_overview).toMatch(/DSPM extends this/)
+    expect(n.solution_overview).not.toMatch(/DAM adds/)
+    expect(n.solution_overview).not.toMatch(/Endpoint Discovery \/ DLP closes/)
   })
 
-  it('SaaS mode never mentions estate modules, even if inputs.modules is (harmlessly) set', () => {
+  it('SaaS mode never pitches estate modules, even if inputs.modules is (harmlessly) set', () => {
     const saasWithModules: DealInputs = { ...saasInputs, modules: { dspm: true, dam: true, endpoint: true } }
     const n = buildNarrative(clientSafe('Acme', saasWithModules))
-    expect(n.solution_overview).not.toMatch(/DSPM/)
-    expect(n.executive_summary).not.toMatch(/DSPM/)
+    expect(n.solution_overview).not.toMatch(/DSPM extends this/)
+    expect(n.solution_overview).not.toMatch(/DAM adds/)
+    expect(n.executive_summary).not.toMatch(/DSPM \(Data Security Posture Management\)/)
   })
 
   it('the DP base scale appears in lakh form', () => {
